@@ -7,7 +7,8 @@ name = "windows_spotlight"
 version = "0.1.0"
 description = "Windows Spotlight helper utilities (image metadata without external image bindings)."
 requires-python = ">=3.10"
-license = { file = "LICENSE" }
+license = {text = "MIT"}
+license-files = ["LICEN[CS]E*", "vendored/licenses/*.txt", "AUTHORS.md"]
 dependencies = []
 
 [project.scripts]
