@@ -7,6 +7,7 @@ import sys
 from ctypes import wintypes
 from typing import Literal
 
+from . import __about__, __version__
 from .get_image_size import try_get_image_size
 
 
@@ -212,9 +213,7 @@ def dump_windows_spotlight(
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(
-        prog="windows_spotlight", description="Extract Windows Spotlight wallpapers."
-    )
+    parser = argparse.ArgumentParser(description="Extract Windows Spotlight wallpapers.")
     parser.add_argument(
         "-a",
         "--assets",
@@ -257,8 +256,22 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Clean the destination directory before extraction",
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s {__version__}"
+    )
+    parser.add_argument(
+        "--about",
+        action="store_true",
+        help="Show information about this program",
+    )
 
     args = parser.parse_args(argv)
+
+    if args.about:
+        print(__about__)
+        return 0
 
     if not args.assets and not args.desktop and not args.lockscreen:
         args.assets = True
