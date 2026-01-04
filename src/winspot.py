@@ -16,21 +16,23 @@ from .get_image_size import try_get_image_size
 
 def get_user_confirmation(prompt: str, is_strict: bool = False) -> bool:
     """Prompts the user for a yes/no confirmation."""
-    if is_strict:
-        while True:
-            response = input(f"{prompt} (y/n): ").strip().lower()
-            if response in ("y", "yes"):
-                return True
-            elif response in ("n", "no"):
-                return False
-            else:
-                print("Please enter 'y' or 'n'.")
-    else:
-        response = input(f"{prompt} (y/n): ").strip().lower()
-        if response in ("y", "yes"):
+
+    valid_yes = {"y", "yes", "yeah", "yep"}
+    valid_no = {"n", "no", "nah", "nope"}
+
+    suffix = "(y/n)" if is_strict else "(y/N)" 
+
+    while True:
+        response = input(f"{prompt} {suffix}: ").strip().lower()
+
+        if response in valid_yes:
             return True
-        else:
+        elif response in valid_no:
             return False
+        elif not is_strict:
+            return False
+
+        print(f"Invalid input '{response}'. Please enter 'y' or 'n'.")
 
 
 def get_pid_by_name(process_name: str) -> int | None:
@@ -230,6 +232,12 @@ def next_available_filename_check_hash(file_path: str) -> tuple[str, bool]:
 
 def reset_windows_spotlight() -> None:
     """Resets Windows Spotlight to try to fetch new wallpapers."""
+
+    if not get_user_confirmation(
+        "This will reset Windows Spotlight settings and may require admin privileges. Continue?",
+        is_strict=False,
+    ):
+        return
 
     # Terminate SystemSettings to unlock files
     pid = get_pid_by_name("SystemSettings.exe")
