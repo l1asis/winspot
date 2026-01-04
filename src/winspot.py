@@ -14,6 +14,25 @@ from . import __about__, __version__
 from .get_image_size import try_get_image_size
 
 
+def get_user_confirmation(prompt: str, is_strict: bool = False) -> bool:
+    """Prompts the user for a yes/no confirmation."""
+    if is_strict:
+        while True:
+            response = input(f"{prompt} (y/n): ").strip().lower()
+            if response in ("y", "yes"):
+                return True
+            elif response in ("n", "no"):
+                return False
+            else:
+                print("Please enter 'y' or 'n'.")
+    else:
+        response = input(f"{prompt} (y/n): ").strip().lower()
+        if response in ("y", "yes"):
+            return True
+        else:
+            return False
+
+
 def get_pid_by_name(process_name: str) -> int | None:
     """Retrieves the PID of a process by its name."""
 
