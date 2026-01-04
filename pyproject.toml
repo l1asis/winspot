@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "windows_spotlight"
+name = "winspot"
 version = "0.1.1"
 description = "A CLI utility to export and reset Windows Spotlight images."
 requires-python = ">=3.10"
@@ -12,7 +12,7 @@ license-files = ["LICEN[CS]E*", "vendored/licenses/*.txt", "AUTHORS.md"]
 dependencies = []
 
 [project.scripts]
-winspot = "src.windows_spotlight:main"
+winspot = "src.winspot:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

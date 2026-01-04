@@ -1,7 +1,7 @@
 from importlib.metadata import PackageNotFoundError, version
 
 try:
-    __version__ = version("windows_spotlight")
+    __version__ = version("winspot")
 except PackageNotFoundError:
     __version__ = "unknown"
 
@@ -22,7 +22,7 @@ __about__ = rf"""
   Version:      {__version__}
   Author:       Volodymyr Horshenin (@l1asis)
   License:      MIT
-  Repository:   https://github.com/l1asis/windows_spotlight
+  Repository:   https://github.com/l1asis/winspot
 
   Description: 
   A utility to export and reset Windows Spotlight images 
