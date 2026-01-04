@@ -4,6 +4,9 @@ winspot is a Python utility and command-line tool to export and reset Windows Sp
 
 ## Installation
 
+> [!WARNING]
+> The project was not uploaded to PyPI yet. The installation instructions below assume that it will be available in the future.
+
 Install directly from PyPI using [pip](https://pip.pypa.io/en/stable/) or [pipx](https://pipx.pypa.io/stable/):
 
 ```bash
