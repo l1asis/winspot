@@ -3,8 +3,9 @@ Module to get image size and metadata without using image library bindings.
 
 Supports BMP, GIF, ICO, JPEG, PNG, and TIFF formats.
 
-:Authors: Paulo Scardine, Emmanuel VAÏSSE, Volodymyr Horshenin
-:License: MIT
+:Original work: Copyright (c) 2013 Paulo Scardine
+:Modified work: Copyright (c) 2025 Volodymyr Horshenin
+:License: This software is released under the [MIT](https://opensource.org/licenses/MIT) License.
 """
 
 import argparse
