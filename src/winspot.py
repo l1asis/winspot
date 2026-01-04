@@ -98,6 +98,10 @@ def _conditional_copy_unique(
     output_file: str,
     skip_existing: bool,
 ) -> None:
+    """
+    Copies the source file to the output file,
+    skipping existing files based on content hash.
+    """
     if skip_existing:
         output_file, is_unique = next_available_filename_check_hash(output_file)
         if is_unique:
@@ -213,6 +217,7 @@ def dump_windows_spotlight(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """Entry point for the command-line interface."""
     parser = argparse.ArgumentParser(description="Extract Windows Spotlight wallpapers.")
     parser.add_argument(
         "-a",
