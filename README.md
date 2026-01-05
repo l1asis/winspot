@@ -44,17 +44,20 @@ winspot --help
 ```python
 import winspot
 
-# Default: Save cached and desktop wallpapers, and try to save lockscreen
-winspot.dump_windows_spotlight()
+# Default: Save everything (cached, desktop, lockscreen)
+winspot.extract_wallpapers()
 
 # Save only cached wallpapers
-winspot.dump_windows_spotlight(extract_desktop=False, extract_lockscreen=False)
+winspot.extract_wallpapers(desktop=False, lockscreen=False)
 
 # Save only desktop wallpapers
-winspot.dump_windows_spotlight(extract_assets=False, extract_lockscreen=False)
+winspot.extract_wallpapers(cached=False, lockscreen=False)
 
 # Try to save only lockscreen
-winspot.dump_windows_spotlight(extract_assets=False, extract_desktop=False)
+winspot.extract_wallpapers(cached=False, desktop=False)
+
+# Reset Windows Spotlight settings
+winspot.reset_windows_spotlight()
 ```
 
 ## Contributing
