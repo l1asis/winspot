@@ -366,7 +366,6 @@ def extract_wallpapers(
                                     prevent_duplicates,
                                 )
 
-
         if os.path.exists(assets_path) and os.path.isdir(assets_path):
             for entry in os.scandir(assets_path):
                 if entry.is_file():
