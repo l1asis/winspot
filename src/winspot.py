@@ -321,7 +321,7 @@ def extract_wallpapers(
     lockscreen_path = None
     if lockscreen and (user_sid := get_user_sid()):
         lockscreen_path = f"C:\\ProgramData\\Microsoft\\Windows\\SystemData\\{user_sid}\\ReadOnly"
-        if os.access(lockscreen_path, os.R_OK):
+        if not os.access(lockscreen_path, os.R_OK):
             lockscreen_path = None
 
     os.makedirs(output_dir, exist_ok=True)
