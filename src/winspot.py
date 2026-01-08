@@ -540,7 +540,7 @@ def main(argv: list[str] | None = None) -> int:
 
     setup_logging(args.verbose, args.quiet, args.silent)
 
-    logger.info(f"WinSpot version {__version__} starting...")
+    logger.info(f"winspot version {__version__} starting...")
 
     if args.reset:
         if args.force or _get_user_confirmation(

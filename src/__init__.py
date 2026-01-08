@@ -21,7 +21,7 @@ __about__ = rf"""
    Don't let them take your skyscapes away.
                 Save them with winspot now.
 
-  WinSpot: The missing CLI for Windows Spotlight management.
+  winspot: The missing CLI for Windows Spotlight management.
   ----------------------------------------------------------
   Version:      {__version__}
   Author:       Volodymyr Horshenin (@l1asis)
