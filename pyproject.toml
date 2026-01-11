@@ -13,10 +13,13 @@ authors = [
 description = "A CLI utility to export and reset Windows Spotlight images."
 readme = "README.md"
 license = "MIT"
-license-files = ["LICEN[CS]E*", "vendored/licenses/*.txt"]
+license-files = [
+    "LICEN[CS]E*",
+    "src/winspot/vendor/licenses/*.txt",
+]
 keywords = [
     "windows", "windows-10", "windows-11", "windows-spotlight",
-    "spotlight", "spotlight-images" "wallpapers", "wallpaper-downloader",
+    "spotlight", "spotlight-images", "wallpapers", "wallpaper-downloader",
     "desktop-customization", "background-images", "desktop", "lockscreen",
     "cli", "utility",
 ]
@@ -31,8 +34,6 @@ classifiers = [
   "Operating System :: Microsoft :: Windows :: Windows 10",
   "Operating System :: Microsoft :: Windows :: Windows 11",
 
-  "License :: OSI Approved :: MIT License",
-
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
@@ -46,8 +47,8 @@ Repository = "https://github.com/l1asis/winspot.git"
 Issues = "https://github.com/l1asis/winspot/issues"
 
 [project.scripts]
-winspot = "src.winspot:main"
+winspot = "winspot.winspot:main"
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["src*"]
+where = ["src"]
+include = ["winspot*"]

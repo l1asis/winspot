@@ -11,7 +11,7 @@ from ctypes import wintypes
 from typing import Literal
 
 from . import __about__, __version__, logger
-from .get_image_size import try_get_image_size
+from .vendor.get_image_size import try_get_image_size
 from .logger_config import setup_logging
 
 
