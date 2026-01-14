@@ -1,5 +1,6 @@
 import argparse
 import ctypes
+import datetime
 import hashlib
 import os
 import shutil
@@ -8,11 +9,271 @@ import subprocess
 import sys
 import time
 from ctypes import wintypes
+from types import TracebackType
 from typing import Literal
 
 from . import __about__, __version__, logger
-from .vendor.get_image_size import try_get_image_size
 from .logger_config import setup_logging
+from .vendor.get_image_size import try_get_image_size
+
+
+# ============================================================================
+# STRUCTURES
+# ============================================================================
+class GUID(ctypes.Structure):
+    _fields_ = [
+        ("Data1", ctypes.c_ulong),
+        ("Data2", ctypes.c_ushort),
+        ("Data3", ctypes.c_ushort),
+        ("Data4", ctypes.c_ubyte * 8),
+    ]
+
+    def __str__(self):
+        return "{%08X-%04X-%04X-%s-%s}" % (
+            self.Data1,
+            self.Data2,
+            self.Data3,
+            "".join(["%02X" % b for b in self.Data4[:2]]),
+            "".join(["%02X" % b for b in self.Data4[2:]]),
+        )
+
+
+class PROPERTYKEY(ctypes.Structure):
+    _fields_ = [("fmtid", GUID), ("pid", wintypes.DWORD)]
+
+
+class PROPVARIANT(ctypes.Structure):
+    class _U(ctypes.Union):
+        _fields_ = [
+            ("lVal", ctypes.c_long),
+            ("pwszVal", ctypes.c_wchar_p),  # For strings
+            # Add other types here if needed (e.g., filetime, bool)
+        ]
+
+    _anonymous_ = ("u",)
+    _fields_ = [
+        ("vt", ctypes.c_ushort),
+        ("wReserved1", ctypes.c_ushort),
+        ("wReserved2", ctypes.c_ushort),
+        ("wReserved3", ctypes.c_ushort),
+        ("u", _U),
+    ]
+
+
+class IPropertyStore(ctypes.Structure):
+    _fields_ = [("lpVtbl", ctypes.POINTER(ctypes.c_void_p))]
+
+
+class PROCESSENTRY32(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ctypes.POINTER(wintypes.ULONG)),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", wintypes.LONG),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.CHAR * wintypes.MAX_PATH),
+    ]
+
+
+# ============================================================================
+# DLL LOADING & HELPER FUNCTIONS
+# ============================================================================
+_ole32 = ctypes.windll.ole32
+_shell32 = ctypes.windll.shell32
+_kernel32 = ctypes.windll.kernel32
+_advapi32 = ctypes.windll.advapi32
+
+
+def DEFINE_PROPERTYKEY(guid_str: str, pid: int) -> PROPERTYKEY:
+    """
+    Parses a GUID string and PID into a cached PROPERTYKEY structure.
+    """
+    pkey = PROPERTYKEY()
+    pkey.pid = pid
+    # Convert string to GUID struct immediately
+    _ole32.CLSIDFromString(guid_str, ctypes.byref(pkey.fmtid))
+    return pkey
+
+
+# ============================================================================
+# FUNCTION PROTOTYPES
+# ============================================================================
+# HRESULT CLSIDFromString([in] LPOLESTR lpsz, [out] LPCLSID pclsid);
+_ole32.CLSIDFromString.argtypes = [ctypes.c_wchar_p, ctypes.POINTER(GUID)]
+_ole32.CLSIDFromString.restype = ctypes.c_long
+
+# HRESULT SHGetPropertyStoreFromParsingName([in] PCWSTR pszPath, [in] IBindCtx *pbc, [in] DWORD flags, [in] REFIID riid, [out] void **ppv);
+_shell32.SHGetPropertyStoreFromParsingName.argtypes = [
+    ctypes.c_wchar_p,
+    ctypes.c_void_p,
+    wintypes.DWORD,
+    ctypes.POINTER(GUID),
+    ctypes.POINTER(ctypes.POINTER(IPropertyStore)),
+]
+_shell32.SHGetPropertyStoreFromParsingName.restype = ctypes.c_long
+
+# HANDLE GetCurrentProcess()
+_kernel32.GetCurrentProcess.argtypes = []
+_kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+
+# BOOL OpenProcessToken([in] HANDLE ProcessHandle, [in] DWORD DesiredAccess, [out] PHANDLE TokenHandle)
+_advapi32.OpenProcessToken.argtypes = [
+    wintypes.HANDLE,
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.HANDLE),
+]
+_advapi32.OpenProcessToken.restype = wintypes.BOOL
+
+# BOOL GetTokenInformation([in] HANDLE TokenHandle, [in] TOKEN_INFORMATION_CLASS TokenInformationClass, [out] LPVOID TokenInformation, [in] DWORD TokenInformationLength, [out] PDWORD ReturnLength)
+_advapi32.GetTokenInformation.argtypes = [
+    wintypes.HANDLE,
+    wintypes.DWORD,
+    ctypes.c_void_p,
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD),
+]
+_advapi32.GetTokenInformation.restype = wintypes.BOOL
+
+# BOOL ConvertSidToStringSidA([in] PSID Sid, [out] LPSTR *StringSid)
+_advapi32.ConvertSidToStringSidA.argtypes = [
+    ctypes.c_void_p,
+    ctypes.POINTER(ctypes.c_char_p),
+]
+_advapi32.ConvertSidToStringSidA.restype = wintypes.BOOL
+
+# BOOL CloseHandle([in] HANDLE hObject)
+_kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+_kernel32.CloseHandle.restype = wintypes.BOOL
+
+# HANDLE CreateToolhelp32Snapshot([in] DWORD dwFlags, [in] DWORD th32ProcessID)
+_kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+_kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+
+# BOOL Process32First([in] HANDLE hSnapshot, [out] LPPROCESSENTRY32 lppe)
+_kernel32.Process32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
+_kernel32.Process32First.restype = wintypes.BOOL
+
+# BOOL Process32Next([in] HANDLE hSnapshot, [out] LPPROCESSENTRY32 lppe)
+_kernel32.Process32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
+_kernel32.Process32Next.restype = wintypes.BOOL
+
+# HRESULT CoInitialize([in, optional] LPVOID pvReserved)
+_ole32.CoInitialize.argtypes = [ctypes.c_void_p]
+_ole32.CoInitialize.restype = ctypes.c_long
+
+# VOID CoUninitialize()
+_ole32.CoUninitialize.argtypes = []
+_ole32.CoUninitialize.restype = None
+
+FnSetValue = ctypes.WINFUNCTYPE(
+    ctypes.HRESULT,
+    ctypes.c_void_p,
+    ctypes.POINTER(PROPERTYKEY),
+    ctypes.POINTER(PROPVARIANT),
+)
+FnCommit = ctypes.WINFUNCTYPE(ctypes.HRESULT, ctypes.c_void_p)
+FnRelease = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)
+
+# ============================================================================
+# CONSTANTS
+# ============================================================================
+GPS_READWRITE = 0x00000002
+VT_LPWSTR = 31
+TH32CS_SNAPPROCESS = 0x00000002
+TOKEN_QUERY = 0x0008
+TOKEN_USER = 1
+
+IID_IPropertyStore = GUID(
+    0x886D8EEB,
+    0x8CF2,
+    0x4446,
+    (ctypes.c_ubyte * 8)(0x8D, 0x02, 0xCD, 0xBA, 0x1D, 0xBD, 0xCF, 0x99),
+)
+
+PKEY_Title = DEFINE_PROPERTYKEY("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}", 2)
+PKEY_Subject = DEFINE_PROPERTYKEY("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}", 3)
+PKEY_Author = DEFINE_PROPERTYKEY("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}", 4)
+PKEY_Comment = DEFINE_PROPERTYKEY("{F29F85E0-4FF9-1068-AB91-08002B27B3D9}", 6)
+PKEY_Copyright = DEFINE_PROPERTYKEY("{64440492-4C8B-11D1-8B70-080036B11A03}", 11)
+
+# ============================================================================
+# END OF SETUP
+# ============================================================================
+
+
+class WindowsMetadataEditor:
+    """Context manager for editing Windows file metadata."""
+
+    def __init__(self, file_path: str):
+        self.file_path = os.path.abspath(file_path)
+        self.store = None
+        self.initialized_com = False
+
+    def __enter__(self):
+        hr = _ole32.CoInitialize(None)
+        if hr == 0 or hr == 1:
+            self.initialized_com = True
+        elif hr == -2147417850 or hr == 0x80010106:
+            pass
+        else:
+            raise OSError(f"Failed to initialize COM library: {hex(hr & 0xFFFFFFFF)}")
+
+        self.store = ctypes.POINTER(IPropertyStore)()
+        hr = _shell32.SHGetPropertyStoreFromParsingName(
+            self.file_path,
+            None,
+            GPS_READWRITE,
+            ctypes.byref(IID_IPropertyStore),
+            ctypes.byref(self.store),
+        )
+        if hr != 0:
+            if self.initialized_com:
+                _ole32.CoUninitialize()
+                self.initialized_com = False
+            raise OSError(f"Failed to open file: {hex(hr & 0xFFFFFFFF)}")
+        return self
+
+    def set_property(self, pkey: PROPERTYKEY, value: str) -> None:
+        if not self.store:
+            raise OSError("Property store is not initialized.")
+
+        vtable = self.store.contents.lpVtbl
+
+        SetValueFunc = FnSetValue(vtable[6])
+
+        propvar = PROPVARIANT()
+        propvar.vt = VT_LPWSTR
+        propvar.pwszVal = value
+
+        hr = SetValueFunc(self.store, ctypes.byref(pkey), ctypes.byref(propvar))
+
+        if hr != 0:
+            raise OSError(f"Failed to set property: {hex(hr & 0xFFFFFFFF)}")
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        if self.store:
+            vtable = self.store.contents.lpVtbl
+
+            if exc_type is None:
+                CommitFunc = FnCommit(vtable[7])
+                CommitFunc(self.store)
+
+            ReleaseFunc = FnRelease(vtable[2])
+            ReleaseFunc(self.store)
+            self.store = None
+
+        if self.initialized_com:
+            _ole32.CoUninitialize()
+            self.initialized_com = False
 
 
 def _get_user_confirmation(prompt: str, is_strict: bool = False) -> bool:
@@ -36,57 +297,41 @@ def _get_user_confirmation(prompt: str, is_strict: bool = False) -> bool:
         print(f"Invalid input '{response}'. Please enter 'y' or 'n'.")
 
 
+def _add_image_metadata(
+    path: str,
+    title: str | None = None,
+    subject: str | None = None,
+    description: str | None = None,
+    copyright: str | None = None,
+) -> None:
+    """Adds metadata to an image file on Windows."""
+
+    try:
+        with WindowsMetadataEditor(path) as editor:
+            if title:
+                editor.set_property(PKEY_Title, title)
+            if subject:
+                editor.set_property(PKEY_Subject, subject)
+            if description:
+                editor.set_property(PKEY_Comment, description)
+            if copyright:
+                editor.set_property(PKEY_Copyright, copyright)
+    except Exception:
+        pass
+
+
 def _get_pid_by_name(process_name: str) -> int | None:
     """Retrieves the PID of a process by its name."""
 
-    # Define constants
-    TH32CS_SNAPPROCESS = 0x00000002
-
-    # Define structures
-    class PROCESSENTRY32(ctypes.Structure):
-        _fields_ = [
-            ("dwSize", wintypes.DWORD),
-            ("cntUsage", wintypes.DWORD),
-            ("th32ProcessID", wintypes.DWORD),
-            ("th32DefaultHeapID", ctypes.POINTER(wintypes.ULONG)),
-            ("th32ModuleID", wintypes.DWORD),
-            ("cntThreads", wintypes.DWORD),
-            ("th32ParentProcessID", wintypes.DWORD),
-            ("pcPriClassBase", wintypes.LONG),
-            ("dwFlags", wintypes.DWORD),
-            ("szExeFile", wintypes.CHAR * wintypes.MAX_PATH),
-        ]
-
-    # Load necessary Windows libraries
-    kernel32 = ctypes.windll.kernel32
-
-    # Define function prototypes
-    # HANDLE CreateToolhelp32Snapshot([in] DWORD dwFlags, [in] DWORD th32ProcessID)
-    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
-    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
-
-    # BOOL Process32First([in] HANDLE hSnapshot, [out] LPPROCESSENTRY32 lppe)
-    kernel32.Process32First.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
-    kernel32.Process32First.restype = wintypes.BOOL
-
-    # BOOL Process32Next([in] HANDLE hSnapshot, [out] LPPROCESSENTRY32 lppe)
-    kernel32.Process32Next.argtypes = [wintypes.HANDLE, ctypes.POINTER(PROCESSENTRY32)]
-    kernel32.Process32Next.restype = wintypes.BOOL
-
-    # HANDLE CloseHandle([in] HANDLE hObject)
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-
-    # Create snapshot of all processes
-    snapshot = kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
+    snapshot = _kernel32.CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
     if snapshot == wintypes.HANDLE(-1).value:
         return None
 
     entry = PROCESSENTRY32()
     entry.dwSize = ctypes.sizeof(PROCESSENTRY32)
 
-    if not kernel32.Process32First(snapshot, ctypes.byref(entry)):
-        kernel32.CloseHandle(snapshot)
+    if not _kernel32.Process32First(snapshot, ctypes.byref(entry)):
+        _kernel32.CloseHandle(snapshot)
         return None
 
     pid = None
@@ -94,70 +339,38 @@ def _get_pid_by_name(process_name: str) -> int | None:
         if entry.szExeFile.decode().lower() == process_name.lower():
             pid = entry.th32ProcessID
             break
-        if not kernel32.Process32Next(snapshot, ctypes.byref(entry)):
+        if not _kernel32.Process32Next(snapshot, ctypes.byref(entry)):
             break
 
-    kernel32.CloseHandle(snapshot)
+    _kernel32.CloseHandle(snapshot)
     return pid
 
 
 def _get_user_sid() -> str | None:
     """Retrieves the current user's SID as a string."""
 
-    # Define constants
-    TOKEN_QUERY = 0x0008
-    TOKEN_USER = 1
-
-    # Load necessary Windows libraries
-    advapi32 = ctypes.windll.advapi32
-    kernel32 = ctypes.windll.kernel32
-
-    # Define function prototypes
-    # HANDLE GetCurrentProcess()
-    kernel32.GetCurrentProcess.restype = wintypes.HANDLE
-    kernel32.GetCurrentProcess.argtypes = []
-
-    # BOOL OpenProcessToken([in] HANDLE ProcessHandle, [in] DWORD DesiredAccess, [out] PHANDLE TokenHandle)
-    advapi32.OpenProcessToken.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.POINTER(wintypes.HANDLE)]
-    advapi32.OpenProcessToken.restype = wintypes.BOOL
-
-    # BOOL GetTokenInformation([in] HANDLE TokenHandle, [in] TOKEN_INFORMATION_CLASS TokenInformationClass, [out] LPVOID TokenInformation, [in] DWORD TokenInformationLength, [out] PDWORD ReturnLength)
-    advapi32.GetTokenInformation.argtypes = [wintypes.HANDLE, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)]
-    advapi32.GetTokenInformation.restype = wintypes.BOOL
-
-    # BOOL ConvertSidToStringSidA([in] PSID Sid, [out] LPSTR *StringSid)
-    advapi32.ConvertSidToStringSidA.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_char_p)]
-    advapi32.ConvertSidToStringSidA.restype = wintypes.BOOL
-
-    # BOOL CloseHandle([in] HANDLE hObject)
-    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
-    kernel32.CloseHandle.restype = wintypes.BOOL
-
-    # Get current process token
-    process_handle = kernel32.GetCurrentProcess()
+    process_handle = _kernel32.GetCurrentProcess()
     token_handle = wintypes.HANDLE()
 
-    if not advapi32.OpenProcessToken(process_handle, TOKEN_QUERY, ctypes.byref(token_handle)):
+    if not _advapi32.OpenProcessToken(process_handle, TOKEN_QUERY, ctypes.byref(token_handle)):
         return None
 
     # Determine required buffer size
     return_length = wintypes.DWORD()
-    advapi32.GetTokenInformation(token_handle, TOKEN_USER, None, 0, ctypes.byref(return_length))
+    _advapi32.GetTokenInformation(token_handle, TOKEN_USER, None, 0, ctypes.byref(return_length))
 
     # Fetch the actual token information
     buffer = ctypes.create_string_buffer(return_length.value)
-    if advapi32.GetTokenInformation(token_handle, TOKEN_USER, buffer, return_length.value, ctypes.byref(return_length)):
+    if _advapi32.GetTokenInformation(token_handle, TOKEN_USER, buffer, return_length.value, ctypes.byref(return_length)):
         # The SID is a pointer within the structure; convert it to a string
         sid_pointer = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
         string_sid = ctypes.c_char_p()
-        advapi32.ConvertSidToStringSidA(sid_pointer, ctypes.byref(string_sid))
+        _advapi32.ConvertSidToStringSidA(sid_pointer, ctypes.byref(string_sid))
         if string_sid.value:
-            # Close the token handle
-            kernel32.CloseHandle(token_handle)
+            _kernel32.CloseHandle(token_handle)
             return string_sid.value.decode()
 
-    # Close the token handle
-    kernel32.CloseHandle(token_handle)
+    _kernel32.CloseHandle(token_handle)
     return None
 
 
@@ -428,9 +641,7 @@ def extract_wallpapers(
                             lockscreen_path, entry_name, filename
                         )
                         if os.path.isfile(source_file):
-                            output_file = os.path.join(
-                                output_dir, filename
-                            )
+                            output_file = os.path.join(output_dir, filename)
                             _smart_copy(
                                 source_file,
                                 output_file,
