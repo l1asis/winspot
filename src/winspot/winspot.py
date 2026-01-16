@@ -3,6 +3,7 @@ import ctypes
 import datetime
 import hashlib
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -10,7 +11,16 @@ import sys
 import time
 from ctypes import wintypes
 from types import TracebackType
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+try:
+    import requests
+
+    requests_imported = True
+except ImportError:
+    requests_imported = False
+    if TYPE_CHECKING:
+        import requests
 
 from . import __about__, __version__, logger
 from .logger_config import setup_logging
@@ -183,6 +193,7 @@ FnRelease = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)
 # ============================================================================
 GPS_READWRITE = 0x00000002
 VT_LPWSTR = 31
+VT_EMPTY = 0
 TH32CS_SNAPPROCESS = 0x00000002
 TOKEN_QUERY = 0x0008
 TOKEN_USER = 1
@@ -246,7 +257,10 @@ class WindowsMetadataEditor:
         SetValueFunc = FnSetValue(vtable[6])
 
         propvar = PROPVARIANT()
-        propvar.vt = VT_LPWSTR
+        if not value:
+            propvar.vt = VT_EMPTY
+        else:
+            propvar.vt = VT_LPWSTR
         propvar.pwszVal = value
 
         hr = SetValueFunc(self.store, ctypes.byref(pkey), ctypes.byref(propvar))
@@ -301,21 +315,24 @@ def _add_image_metadata(
     path: str,
     title: str | None = None,
     subject: str | None = None,
-    description: str | None = None,
     copyright: str | None = None,
+    comment: str | None = None,
+    author: str | None = None,
 ) -> None:
     """Adds metadata to an image file on Windows."""
 
     try:
         with WindowsMetadataEditor(path) as editor:
-            if title:
+            if title is not None:
                 editor.set_property(PKEY_Title, title)
-            if subject:
+            if subject is not None:
                 editor.set_property(PKEY_Subject, subject)
-            if description:
-                editor.set_property(PKEY_Comment, description)
-            if copyright:
+            if copyright is not None:
                 editor.set_property(PKEY_Copyright, copyright)
+            if comment is not None:
+                editor.set_property(PKEY_Comment, comment)
+            if author is not None:
+                editor.set_property(PKEY_Author, author)
     except Exception:
         pass
 
@@ -352,16 +369,26 @@ def _get_user_sid() -> str | None:
     process_handle = _kernel32.GetCurrentProcess()
     token_handle = wintypes.HANDLE()
 
-    if not _advapi32.OpenProcessToken(process_handle, TOKEN_QUERY, ctypes.byref(token_handle)):
+    if not _advapi32.OpenProcessToken(
+        process_handle, TOKEN_QUERY, ctypes.byref(token_handle)
+    ):
         return None
 
     # Determine required buffer size
     return_length = wintypes.DWORD()
-    _advapi32.GetTokenInformation(token_handle, TOKEN_USER, None, 0, ctypes.byref(return_length))
+    _advapi32.GetTokenInformation(
+        token_handle, TOKEN_USER, None, 0, ctypes.byref(return_length)
+    )
 
     # Fetch the actual token information
     buffer = ctypes.create_string_buffer(return_length.value)
-    if _advapi32.GetTokenInformation(token_handle, TOKEN_USER, buffer, return_length.value, ctypes.byref(return_length)):
+    if _advapi32.GetTokenInformation(
+        token_handle,
+        TOKEN_USER,
+        buffer,
+        return_length.value,
+        ctypes.byref(return_length),
+    ):
         # The SID is a pointer within the structure; convert it to a string
         sid_pointer = ctypes.cast(buffer, ctypes.POINTER(ctypes.c_void_p))[0]
         string_sid = ctypes.c_char_p()
@@ -457,7 +484,9 @@ def _smart_copy(
 
     os.makedirs(output_dir, exist_ok=True)
     shutil.copy2(source_path, output_path)
-    logger.debug("Copied: %s -> %s", os.path.basename(source_path), os.path.basename(output_path))
+    logger.debug(
+        "Copied: %s -> %s", os.path.basename(source_path), os.path.basename(output_path)
+    )
     return True
 
 
@@ -486,7 +515,9 @@ def reset_windows_spotlight() -> None:
         logger.warning("Spotlight settings directory not found: %s", settings_path)
 
     transcoded_wallpaper_path = os.path.join(themes_path, "TranscodedWallpaper")
-    if os.path.exists(transcoded_wallpaper_path) and os.path.isfile(transcoded_wallpaper_path):
+    if os.path.exists(transcoded_wallpaper_path) and os.path.isfile(
+        transcoded_wallpaper_path
+    ):
         logger.debug("Removing TranscodedWallpaper")
         os.remove(transcoded_wallpaper_path)
 
@@ -522,6 +553,149 @@ def reset_windows_spotlight() -> None:
     logger.info("Windows Spotlight reset completed")
 
 
+def download_bing_daily_images(
+    index: int = 0,
+    count: int = 1,
+    resolution: Literal["1920x1080", "3840x2160", "1080x1920"] | str = "3840x2160",
+    locale: str = "en-US",
+    on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
+    prevent_duplicates: bool = False,
+    output_dir: str = ".\\BingDailyImages",
+    clear_output: bool = False,
+) -> None:
+    """Downloads Bing daily images."""
+    logger.info("Starting Bing daily image download to: %s", output_dir)
+    logger.debug(
+        "Options: index=%d, count=%d, resolution=%s, locale=%s",
+        index,
+        count,
+        resolution,
+        locale,
+    )
+
+    if not requests_imported:
+        logger.error("requests library not installed - cannot download images")
+        return
+
+    # Pattern to find: Description (© Author [separator] Agency)
+    pattern = r"^(.*?) \((© ?(.*?)(?: - |/|(?=\))).*)\)$"
+
+    api_endpoint = "https://www.bing.com/HPImageArchive.aspx"
+    params = {
+        "format": "js",
+        "idx": str(index if index >= 0 else 0),
+        "n": str(count if 1 <= count <= 8 else min(max(count, 1), 8)),
+        "mkt": locale,
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    }
+    width, height = resolution.split("x")
+    if resolution != "1920x1080":
+        params["uhd"] = "1"
+        params["uhdwidth"] = width
+        params["uhdheight"] = height
+
+    response = requests.get(api_endpoint, params=params, headers=headers)
+
+    if response.status_code != 200:
+        logger.error("Failed to fetch Bing daily images: HTTP %d", response.status_code)
+    else:
+        data = response.json()
+        if "images" not in data:
+            logger.error("No images found in Bing API response")
+        else:
+            os.makedirs(output_dir, exist_ok=True)
+            if clear_output:
+                logger.info("Clearing output directory")
+                _clear_directory(output_dir)
+
+            for image in data["images"]:
+                image_url = f"https://www.bing.com{image['url']}"
+                image_title = image.get("title", "BingImage")  # PKEY_Title
+                match = re.search(pattern, image.get("copyright", ""))
+                if match:
+                    image_description = match.group(1).strip()  # PKEY_Comment
+                    image_copyright = match.group(2).strip()  # PKEY_Copyright
+                    image_author = match.group(3).strip()  # PKEY_Author
+                else:
+                    image_description = image.get("copyright", "").strip()
+                    image_copyright = image_description
+                    image_author = ""
+
+                image_topic = (
+                    image["urlbase"].split(".")[-1].split("_")[0].replace("OHR.", "")
+                )
+                file_name = (
+                    f"Bing_{image['startdate']}_{image_topic}_{width}x{height}.jpg"
+                )
+                output_path = os.path.join(output_dir, file_name)
+
+                try:
+                    img_response = requests.get(image_url, headers=headers, stream=True)
+                    if img_response.status_code == 200:
+                        temp_path = os.path.splitext(output_path)[0] + ".tmp.jpg"
+                        with open(temp_path, "wb") as f:
+                            for chunk in img_response.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                        _add_image_metadata(
+                            temp_path,
+                            title=image_title,
+                            subject="",
+                            copyright=image_copyright,
+                            comment=image_description,
+                            author=image_author,
+                        )
+                        if _smart_copy(
+                            temp_path,
+                            output_path,
+                            on_conflict,
+                            prevent_duplicates,
+                        ):
+                            logger.debug("Downloaded: %s", file_name)
+                        os.remove(temp_path)
+                    else:
+                        logger.error(
+                            "Failed to download image %s: HTTP %d",
+                            file_name,
+                            img_response.status_code,
+                        )
+                except Exception:
+                    logger.error("Error downloading image %s", file_name, exc_info=True)
+
+    logger.info("Bing daily image download completed")
+
+
+def download_wallpapers(
+    api_version: Literal["v3", "v4", "auto"] = "auto",
+    country_code: str | None = None,
+    locale: str | None = None,
+    orientation: Literal["landscape", "portrait", "both"] = "both",
+    on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
+    prevent_duplicates: bool = False,
+    output_dir: str = ".\\WindowsSpotlightWallpapers",
+    clear_output: bool = False,
+) -> None:
+    """Downloads wallpapers from Windows Spotlight API."""
+    logger.info("Starting Spotlight API download to: %s", output_dir)
+    logger.debug(
+        "Options: api_version=%s, country_code=%s, locale=%s, orientation=%s",
+        api_version,
+        country_code,
+        locale,
+        orientation,
+    )
+
+    utc_now = datetime.datetime.now(datetime.timezone.utc)
+    iso_utc_now = utc_now.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    if api_version == "v4" or api_version == "auto":
+        pass
+
+    logger.warning("Spotlight API download not yet implemented")
+    return
+
+
 def extract_wallpapers(
     cached: bool = True,
     desktop: bool = True,
@@ -536,7 +710,10 @@ def extract_wallpapers(
     logger.info("Starting wallpaper extraction to: %s", output_dir)
     logger.debug(
         "Options: cached=%s, desktop=%s, lockscreen=%s, orientation=%s",
-        cached, desktop, lockscreen, orientation
+        cached,
+        desktop,
+        lockscreen,
+        orientation,
     )
 
     app_data = os.getenv("APPDATA")
@@ -550,9 +727,13 @@ def extract_wallpapers(
     desktop_path = f"{app_data}\\Microsoft\\Windows\\Themes\\TranscodedWallpaper"
     lockscreen_path = None
     if lockscreen and (user_sid := _get_user_sid()):
-        lockscreen_path = f"C:\\ProgramData\\Microsoft\\Windows\\SystemData\\{user_sid}\\ReadOnly"
+        lockscreen_path = (
+            f"C:\\ProgramData\\Microsoft\\Windows\\SystemData\\{user_sid}\\ReadOnly"
+        )
         if not os.access(lockscreen_path, os.R_OK):
-            logger.warning("Lock screen path not accessible (may require admin privileges)")
+            logger.warning(
+                "Lock screen path not accessible (may require admin privileges)"
+            )
             lockscreen_path = None
 
     os.makedirs(output_dir, exist_ok=True)
@@ -657,22 +838,29 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Extract Windows Spotlight wallpapers."
     )
-    parser.add_argument(
+
+    subparsers = parser.add_subparsers(dest="command", help="Command to execute")
+
+    # Extract command
+    extract_parser = subparsers.add_parser(
+        "extract", help="Extract Windows Spotlight wallpapers"
+    )
+    extract_parser.add_argument(
         "-c",
         "--cached",
         action="store_true",
         help="Extract cached wallpapers from IrisService and Assets folders",
     )
-    parser.add_argument(
+    extract_parser.add_argument(
         "-d", "--desktop", action="store_true", help="Extract current desktop wallpaper"
     )
-    parser.add_argument(
+    extract_parser.add_argument(
         "-l",
         "--lockscreen",
         action="store_true",
         help="Extract current lock screen wallpaper (if accessible)",
     )
-    parser.add_argument(
+    extract_parser.add_argument(
         "-r",
         "--orientation",
         type=str,
@@ -680,32 +868,87 @@ def main(argv: list[str] | None = None) -> int:
         choices=["landscape", "portrait", "both"],
         help="Filter wallpapers by orientation",
     )
-    parser.add_argument(
-        "-s",
-        "--on-conflict",
+
+    # Bing daily images command
+    bing_parser = subparsers.add_parser("bing", help="Download Bing daily images")
+    bing_parser.add_argument(
+        "-i", "--index", type=int, default=0, help="Starting index (0 = today)"
+    )
+    bing_parser.add_argument(
+        "-n", "--count", type=int, default=1, help="Number of images to download (1-8)"
+    )
+    bing_parser.add_argument(
+        "-R",
+        "--resolution",
         type=str,
-        default="rename",
-        choices=["rename", "overwrite", "skip"],
-        help="Action to take when a file with the same name exists in the output directory",
+        default="3840x2160",
+        choices=["1920x1080", "3840x2160", "1080x1920"],
+        help="Image resolution",
     )
-    parser.add_argument(
-        "-S",
-        "--prevent-duplicates",
-        action="store_true",
-        help="Prevent saving duplicate images based on content",
-    )
-    parser.add_argument(
-        "-o",
-        "--out",
+    bing_parser.add_argument(
+        "-L",
+        "--locale",
         type=str,
-        default=".\\WindowsSpotlightWallpapers",
-        help="Output directory for extracted wallpapers",
+        default="en-US",
+        help="Market locale (e.g., en-US, zh-CN)",
     )
-    parser.add_argument(
-        "--clear",
-        action="store_true",
-        help="Clear the output directory before extraction",
+
+    # Download wallpapers command
+    download_parser = subparsers.add_parser(
+        "download", help="Download wallpapers from Windows Spotlight API"
     )
+    download_parser.add_argument(
+        "-a",
+        "--api-version",
+        type=str,
+        default="auto",
+        choices=["v3", "v4", "auto"],
+        help="API version to use",
+    )
+    download_parser.add_argument(
+        "-C", "--country-code", type=str, help="Country code (e.g., US, CN)"
+    )
+    download_parser.add_argument(
+        "-L", "--locale", type=str, help="Locale (e.g., en-US, zh-CN)"
+    )
+    download_parser.add_argument(
+        "-r",
+        "--orientation",
+        type=str,
+        default="both",
+        choices=["landscape", "portrait", "both"],
+        help="Filter wallpapers by orientation",
+    )
+
+    # Shared arguments for all download/extract commands
+    for subparser in [extract_parser, bing_parser, download_parser]:
+        subparser.add_argument(
+            "-s",
+            "--on-conflict",
+            type=str,
+            default="rename",
+            choices=["rename", "overwrite", "skip"],
+            help="Action to take when a file with the same name exists",
+        )
+        subparser.add_argument(
+            "-S",
+            "--prevent-duplicates",
+            action="store_true",
+            help="Prevent saving duplicate images based on content",
+        )
+        subparser.add_argument(
+            "-o",
+            "--out",
+            type=str,
+            help="Output directory",
+        )
+        subparser.add_argument(
+            "--clear",
+            action="store_true",
+            help="Clear the output directory before operation",
+        )
+
+    # Global arguments
     parser.add_argument(
         "--reset",
         action="store_true",
@@ -729,7 +972,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--silent",
         action="store_true",
-        help="Suppress all output (overrides --verbose and --quiet)",
+        help="Suppress all output",
     )
     parser.add_argument(
         "--version",
@@ -750,19 +993,42 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     setup_logging(args.verbose, args.quiet, args.silent)
-
     logger.info(f"winspot version {__version__} starting...")
 
     if args.reset:
         if args.force or _get_user_confirmation(
-            "This will reset Windows Spotlight settings "
-            "and may require admin privileges. Continue?",
+            "This will reset Windows Spotlight settings. Continue?",
             is_strict=False,
         ):
             reset_windows_spotlight()
         else:
             logger.info("Reset cancelled by user")
-    else:
+        return 0
+
+    # Handle commands
+    if args.command == "bing":
+        download_bing_daily_images(
+            index=args.index,
+            count=args.count,
+            resolution=args.resolution,
+            locale=args.locale,
+            on_conflict=args.on_conflict,
+            prevent_duplicates=args.prevent_duplicates,
+            output_dir=args.out or ".\\BingDailyImages",
+            clear_output=args.clear,
+        )
+    elif args.command == "download":
+        download_wallpapers(
+            api_version=args.api_version,
+            country_code=args.country_code,
+            locale=args.locale,
+            orientation=args.orientation,
+            on_conflict=args.on_conflict,
+            prevent_duplicates=args.prevent_duplicates,
+            output_dir=args.out or ".\\WindowsSpotlightWallpapers",
+            clear_output=args.clear,
+        )
+    elif args.command == "extract":
         if not args.cached and not args.desktop and not args.lockscreen:
             args.cached = True
             args.desktop = True
@@ -775,9 +1041,12 @@ def main(argv: list[str] | None = None) -> int:
             orientation=args.orientation,
             on_conflict=args.on_conflict,
             prevent_duplicates=args.prevent_duplicates,
-            output_dir=args.out,
+            output_dir=args.out or ".\\WindowsSpotlightWallpapers",
             clear_output=args.clear,
         )
+    else:
+        parser.print_help()
+        return 1
 
     return 0
 

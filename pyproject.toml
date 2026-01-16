@@ -49,6 +49,9 @@ Issues = "https://github.com/l1asis/winspot/issues"
 [project.scripts]
 winspot = "winspot.winspot:main"
 
+[project.optional-dependencies]
+dl = ["requests"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["winspot*"]
