@@ -1,6 +1,7 @@
 # winspot
 
-winspot is a Python utility and command-line tool to export and reset Windows Spotlight images.
+winspot is a Python utility and command-line tool to export, reset, and download Windows Spotlight images.
+Additionally, it can download Bing's daily images.
 
 ## Installation
 
@@ -24,16 +25,56 @@ pip install .
 
 ### CLI
 
-Run the tool to automatically save Spotlight images:
+winspot uses subcommands to organize different operations:
+
+#### Extract Windows Spotlight
 
 ```bash
-winspot
+# Save all wallpapers (cached, desktop, lockscreen)
+winspot extract
+
+# Save only cached wallpapers
+winspot extract --cached
+
+# Save only desktop wallpaper
+winspot extract --desktop
+
+# Save only lock screen wallpaper
+winspot extract --lockscreen
+
+# Save only landscape wallpapers with duplicate prevention
+winspot extract --orientation landscape --prevent-duplicates
 ```
 
-For more options (like output directory):
+#### Download Bing Daily Images
+
+```bash
+# Download today's Bing image in 4K
+winspot bing
+
+# Download the last 7 days of images
+winspot bing --count 7
+
+# Download in 1080p with specific locale
+winspot bing --resolution 1920x1080 --locale de-DE
+```
+
+#### Reset Windows Spotlight
+
+```bash
+# Reset with confirmation prompt
+winspot --reset
+
+# Force reset without confirmation
+winspot --reset --force
+```
+
+For complete help:
 
 ```bash
 winspot --help
+winspot extract --help
+winspot bing --help
 ```
 
 ### As a Library
@@ -41,17 +82,30 @@ winspot --help
 ```python
 import winspot
 
-# Default: Save everything (cached, desktop, lockscreen)
+# Save with default settings (all sources)
 winspot.extract_wallpapers()
 
 # Save only cached wallpapers
 winspot.extract_wallpapers(desktop=False, lockscreen=False)
 
-# Save only desktop wallpapers
-winspot.extract_wallpapers(cached=False, lockscreen=False)
+# Save only landscape wallpapers with duplicate prevention
+winspot.extract_wallpapers(
+    orientation="landscape",
+    prevent_duplicates=True
+)
 
-# Try to save only lockscreen
-winspot.extract_wallpapers(cached=False, desktop=False)
+# Save with conflict resolution
+winspot.extract_wallpapers(
+    on_conflict="skip",  # or "overwrite", "rename"
+)
+
+# Download Bing daily images
+winspot.download_bing_daily_images(
+    count=7,
+    resolution="3840x2160",
+    locale="en-US",
+    prevent_duplicates=True
+)
 
 # Reset Windows Spotlight settings
 winspot.reset_windows_spotlight()
