@@ -622,13 +622,16 @@ def download_bing_daily_images(
 
                 match = re.search(pattern, raw_copyright)
                 if match:
-                    image_subject = match.group(1).strip()
+                    image_location = match.group(1).strip()
                     image_copyright = match.group(2).strip()
                     image_author = _normalize_author_separators(match.group(3).strip())
                 else:
-                    image_subject = raw_copyright
-                    image_copyright = ""
+                    image_location = ""
+                    image_copyright = raw_copyright
                     image_author = ""
+
+                metadata_title = image_location or image_title
+                metadata_subject = image_title if image_location else None
 
                 image_topic = (
                     image["urlbase"].split(".")[-1].split("_")[0].replace("OHR.", "")
@@ -643,8 +646,8 @@ def download_bing_daily_images(
                     output_path,
                     on_conflict,
                     prevent_duplicates,
-                    title=image_title,
-                    subject=image_subject,
+                    title=metadata_title,
+                    subject=metadata_subject,
                     copyright_text=image_copyright,
                     comment=raw_copyright,
                     author=image_author,
