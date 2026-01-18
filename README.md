@@ -21,6 +21,14 @@ cd winspot
 pip install .
 ```
 
+If you want to _download_ Bing/Spotlight images, make sure to install the optional dependencies:
+
+```bash
+pip install winspot[dl]
+# or from source
+pip install .[dl]
+```
+
 ## Usage
 
 ### CLI
