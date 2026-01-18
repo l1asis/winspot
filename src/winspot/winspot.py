@@ -2,6 +2,7 @@ import argparse
 import ctypes
 import datetime
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -577,8 +578,9 @@ def download_bing_daily_images(
         logger.error("requests library not installed - cannot download images")
         return
 
-    # Pattern to find: Description (© Author [separator] Agency)
-    pattern = r"^(.*?) \((© ?(.*?)(?: - |/|(?=\))).*)\)$"
+    # Pattern: "Description (© Author/Agency)" or "Description (© Author - Agency)"
+    # Captures: 1=description, 2=full copyright with ©, 3=photographer name only
+    pattern = r"^(.*?) \((©\s*(?:photo by\s+)?([^/\-–—]+?)(?:\s*[/\-–—].*)?)\)$"
 
     api_endpoint = "https://www.bing.com/HPImageArchive.aspx"
     params = {
@@ -612,15 +614,17 @@ def download_bing_daily_images(
 
             for image in data["images"]:
                 image_url = f"https://www.bing.com{image['url']}"
-                image_title = image.get("title", "BingImage")  # PKEY_Title
-                match = re.search(pattern, image.get("copyright", ""))
+                image_title = image.get("title", "")  # e.g., "Where time grows tall"
+                raw_copyright = image.get("copyright", "")
+                
+                match = re.search(pattern, raw_copyright)
                 if match:
-                    image_description = match.group(1).strip()  # PKEY_Comment
-                    image_copyright = match.group(2).strip()  # PKEY_Copyright
-                    image_author = match.group(3).strip()  # PKEY_Author
+                    image_subject = match.group(1).strip()  # Description of scene
+                    image_copyright = match.group(2).strip()  # © with attribution
+                    image_author = match.group(3).strip()  # Photographer name
                 else:
-                    image_description = image.get("copyright", "").strip()
-                    image_copyright = image_description
+                    image_subject = raw_copyright
+                    image_copyright = ""
                     image_author = ""
 
                 image_topic = (
@@ -631,39 +635,85 @@ def download_bing_daily_images(
                 )
                 output_path = os.path.join(output_dir, file_name)
 
-                try:
-                    img_response = requests.get(image_url, headers=headers, stream=True)
-                    if img_response.status_code == 200:
-                        temp_path = os.path.splitext(output_path)[0] + ".tmp.jpg"
-                        with open(temp_path, "wb") as f:
-                            for chunk in img_response.iter_content(chunk_size=8192):
-                                f.write(chunk)
-                        _add_image_metadata(
-                            temp_path,
-                            title=image_title,
-                            subject="",
-                            copyright=image_copyright,
-                            comment=image_description,
-                            author=image_author,
-                        )
-                        if _smart_copy(
-                            temp_path,
-                            output_path,
-                            on_conflict,
-                            prevent_duplicates,
-                        ):
-                            logger.debug("Downloaded: %s", file_name)
-                        os.remove(temp_path)
-                    else:
-                        logger.error(
-                            "Failed to download image %s: HTTP %d",
-                            file_name,
-                            img_response.status_code,
-                        )
-                except Exception:
-                    logger.error("Error downloading image %s", file_name, exc_info=True)
+                _download_and_save_image(
+                    image_url,
+                    output_path,
+                    on_conflict,
+                    prevent_duplicates,
+                    title=image_title,
+                    subject=image_subject,
+                    copyright_text=image_copyright,
+                    comment=raw_copyright,
+                    author=image_author,
+                )
 
     logger.info("Bing daily image download completed")
+
+
+def _extract_title_from_hover_text(hover_text: str) -> str | None:
+    """Extracts the location/title from iconHoverText (first line before ©)."""
+    if not hover_text:
+        return None
+    # iconHoverText format: "Location\r\n© Copyright\r\nRight-click..."
+    lines = hover_text.split("\r\n")
+    if lines:
+        return lines[0].strip()
+    return None
+
+
+def _download_and_save_image(
+    url: str,
+    output_path: str,
+    on_conflict: Literal["rename", "overwrite", "skip"],
+    prevent_duplicates: bool,
+    title: str | None = None,
+    subject: str | None = None,
+    copyright_text: str | None = None,
+    comment: str | None = None,
+    author: str | None = None,
+) -> bool:
+    """Downloads an image from URL and saves it with metadata."""
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
+
+        # Save to a temporary file first
+        temp_path = os.path.splitext(output_path)[0] + ".tmp.jpg"
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+
+        with open(temp_path, "wb") as f:
+            f.write(response.content)
+
+        # Add metadata to temp file before copying
+        _add_image_metadata(
+            temp_path,
+            title=title,
+            subject=subject,
+            copyright=copyright_text,
+            comment=comment,
+            author=author,
+        )
+
+        # Use smart copy to handle conflicts and duplicates
+        success = _smart_copy(
+            temp_path,
+            output_path,
+            on_conflict=on_conflict,
+            prevent_duplicates=prevent_duplicates,
+        )
+
+        # Clean up temp file
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        if success:
+            logger.info("Downloaded: %s", os.path.basename(output_path))
+
+        return success
+
+    except requests.RequestException as e:
+        logger.error("Failed to download %s: %s", url, e)
+        return False
 
 
 def download_wallpapers(
@@ -686,13 +736,194 @@ def download_wallpapers(
         orientation,
     )
 
+    if not requests_imported:
+        logger.error("requests library not installed - cannot download wallpapers")
+        return
+
+    if clear_output and os.path.exists(output_dir):
+        _clear_directory(output_dir)
+
+    os.makedirs(output_dir, exist_ok=True)
+
     utc_now = datetime.datetime.now(datetime.timezone.utc)
     iso_utc_now = utc_now.strftime("%Y-%m-%dT%H:%M:%SZ")
+    download_count = 0
+    v4_success = False
 
     if api_version == "v4" or api_version == "auto":
-        pass
+        parameters = {
+            "fmt": "json",
+            "placement": "88000820",
+            "bcnt": "4",
+            "country": country_code or "US",
+            "locale": locale or "en-US",
+        }
 
-    logger.warning("Spotlight API download not yet implemented")
+        try:
+            response = requests.get(
+                "https://fd.api.iris.microsoft.com/v4/api/selection",
+                params=parameters,
+                timeout=30,
+            )
+
+            if response.ok:
+                v4_success = True
+                items: list[dict[str, str]] = response.json().get("batchrsp", {}).get("items", [])
+
+                for raw_item in items:
+                    item = json.loads(raw_item.get("item", r"{}"))
+                    ad = item.get("ad", {})
+
+                    # Extract metadata from v4 response
+                    # iconHoverText: "Location\r\n© Copyright\r\nRight-click to learn more"
+                    hover_text = ad.get("iconHoverText", "")
+                    location_title = _extract_title_from_hover_text(hover_text)
+
+                    title = ad.get("title")  # e.g., "Drive if you dare"
+                    description = ad.get("description")  # Full description
+                    copyright_text = ad.get("copyright")  # e.g., "© Roberto Moiola..."
+
+                    # Use location as title, API title as subject
+                    metadata_title = location_title or title
+                    metadata_subject = title if location_title else None
+                    metadata_comment = description
+
+                    # Download landscape image
+                    if orientation in ("landscape", "both"):
+                        landscape_url = ad.get("landscapeImage", {}).get("asset")
+                        if landscape_url:
+                            # Extract filename from URL
+                            filename = os.path.basename(landscape_url.split("?")[0])
+                            output_path = os.path.join(output_dir, filename)
+
+                            if _download_and_save_image(
+                                landscape_url,
+                                output_path,
+                                on_conflict,
+                                prevent_duplicates,
+                                title=metadata_title,
+                                subject=metadata_subject,
+                                copyright_text=copyright_text,
+                                comment=metadata_comment,
+                            ):
+                                download_count += 1
+
+                    # Download portrait image
+                    if orientation in ("portrait", "both"):
+                        portrait_url = ad.get("portraitImage", {}).get("asset")
+                        if portrait_url:
+                            filename = os.path.basename(portrait_url.split("?")[0])
+                            output_path = os.path.join(output_dir, filename)
+
+                            if _download_and_save_image(
+                                portrait_url,
+                                output_path,
+                                on_conflict,
+                                prevent_duplicates,
+                                title=metadata_title,
+                                subject=metadata_subject,
+                                copyright_text=copyright_text,
+                                comment=metadata_comment,
+                            ):
+                                download_count += 1
+
+                logger.info("V4 API: Downloaded %d images", download_count)
+
+        except requests.RequestException as e:
+            logger.warning("V4 API request failed: %s", e)
+            v4_success = False
+
+    # Use v3 if explicitly requested or v4 failed
+    if api_version == "v3" or (api_version == "auto" and not v4_success):
+        parameters = {
+            "fmt": "json",
+            "pid": "338387",
+            "ua": "WindowsShellClient/10.0.19041.1",
+            "cdm": "1",
+            "pl": locale or "en-US",
+            "lc": locale or "en-US",
+            "ctry": country_code or "US",
+            "time": iso_utc_now,
+        }
+
+        try:
+            response = requests.get(
+                "https://arc.msn.com/v3/Delivery/Placement",
+                params=parameters,
+                timeout=30,
+            )
+
+            if response.ok:
+                items = response.json().get("batchrsp", {}).get("items", [])
+                v3_count = 0
+
+                for raw_item in items:
+                    item = json.loads(raw_item.get("item", r"{}"))
+                    ad = item.get("ad", {})
+
+                    # Extract metadata from v3 response
+                    title = ad.get("title_text", {}).get("tx")  # e.g., "Colca Canyon, Peru"
+                    copyright_text = ad.get("copyright_text", {}).get("tx")
+
+                    # Get description from hotspot text
+                    hs1_text = ad.get("hs1_title_text", {}).get("tx", "")
+                    hs2_text = ad.get("hs2_title_text", {}).get("tx", "")
+                    description = hs1_text or hs2_text
+
+                    # Download landscape image
+                    if orientation in ("landscape", "both"):
+                        landscape_data = ad.get("image_fullscreen_001_landscape", {})
+                        landscape_url = landscape_data.get("u")
+
+                        if landscape_url:
+                            # Skip empty/placeholder images (fileSize ~736 bytes)
+                            file_size = int(landscape_data.get("fileSize", "0"))
+                            if file_size > 1000:
+                                filename = os.path.basename(landscape_url.split("?")[0])
+                                output_path = os.path.join(output_dir, filename)
+
+                                if _download_and_save_image(
+                                    landscape_url,
+                                    output_path,
+                                    on_conflict,
+                                    prevent_duplicates,
+                                    title=title,
+                                    subject=None,
+                                    copyright_text=copyright_text,
+                                    comment=description,
+                                ):
+                                    v3_count += 1
+
+                    # Download portrait image
+                    if orientation in ("portrait", "both"):
+                        portrait_data = ad.get("image_fullscreen_001_portrait", {})
+                        portrait_url = portrait_data.get("u")
+
+                        if portrait_url:
+                            file_size = int(portrait_data.get("fileSize", "0"))
+                            if file_size > 1000:
+                                filename = os.path.basename(portrait_url.split("?")[0])
+                                output_path = os.path.join(output_dir, filename)
+
+                                if _download_and_save_image(
+                                    portrait_url,
+                                    output_path,
+                                    on_conflict,
+                                    prevent_duplicates,
+                                    title=title,
+                                    subject=None,
+                                    copyright_text=copyright_text,
+                                    comment=description,
+                                ):
+                                    v3_count += 1
+
+                download_count += v3_count
+                logger.info("V3 API: Downloaded %d images", v3_count)
+
+        except requests.RequestException as e:
+            logger.error("V3 API request failed: %s", e)
+
+    logger.info("Total downloaded: %d images to %s", download_count, output_dir)
     return
 
 
