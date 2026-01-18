@@ -616,14 +616,14 @@ def download_bing_daily_images(
 
             for image in data["images"]:
                 image_url = f"https://www.bing.com{image['url']}"
-                image_title = image.get("title", "")  # e.g., "Where time grows tall"
+                image_title = image.get("title", "")
                 raw_copyright = image.get("copyright", "")
-                
+
                 match = re.search(pattern, raw_copyright)
                 if match:
-                    image_subject = match.group(1).strip()  # Description of scene
-                    image_copyright = match.group(2).strip()  # © with attribution
-                    image_author = _normalize_author_separators(match.group(3).strip())  # Photographer name
+                    image_subject = match.group(1).strip()
+                    image_copyright = match.group(2).strip()
+                    image_author = _normalize_author_separators(match.group(3).strip())
                 else:
                     image_subject = raw_copyright
                     image_copyright = ""
@@ -655,7 +655,7 @@ def download_bing_daily_images(
 
 def _normalize_author_separators(author: str) -> str:
     """Normalizes author separators to semicolons for Windows metadata.
-    
+
     Converts various separator patterns to semicolons:
     - "A, B, and C" -> "A; B; C"
     - "A and B" -> "A; B"
@@ -663,9 +663,7 @@ def _normalize_author_separators(author: str) -> str:
     """
     if not author:
         return author
-    # Replace ", and " first to avoid double replacement
     result = re.sub(r",?\s+and\s+", "; ", author, flags=re.IGNORECASE)
-    # Replace remaining commas
     result = re.sub(r",\s*", "; ", result)
     return result
 
@@ -686,14 +684,12 @@ def _download_and_save_image(
         response = requests.get(url, timeout=30)
         response.raise_for_status()
 
-        # Save to a temporary file first
         temp_path = os.path.splitext(output_path)[0] + ".tmp.jpg"
         os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
 
         with open(temp_path, "wb") as f:
             f.write(response.content)
 
-        # Add metadata to temp file before copying
         _add_image_metadata(
             temp_path,
             title=title,
@@ -703,7 +699,6 @@ def _download_and_save_image(
             author=author,
         )
 
-        # Use smart copy to handle conflicts and duplicates
         success = _smart_copy(
             temp_path,
             output_path,
@@ -711,7 +706,6 @@ def _download_and_save_image(
             prevent_duplicates=prevent_duplicates,
         )
 
-        # Clean up temp file
         if os.path.exists(temp_path):
             os.remove(temp_path)
 
@@ -777,40 +771,43 @@ def download_wallpapers(
 
             if response.ok:
                 v4_success = True
-                items: list[dict[str, str]] = response.json().get("batchrsp", {}).get("items", [])
+                items: list[dict[str, str]] = (
+                    response.json().get("batchrsp", {}).get("items", [])
+                )
 
                 for raw_item in items:
                     item = json.loads(raw_item.get("item", r"{}"))
                     ad = item.get("ad", {})
 
-                    # Extract metadata from v4 response
-                    # iconHoverText: "Location\r\n© Copyright\r\nRight-click to learn more"
                     hover_text = ad.get("iconHoverText", "")
                     location_title = None
                     if hover_text_lines := hover_text.split("\r\n"):
                         location_title = hover_text_lines[0].strip()
 
-                    title = ad.get("title")  # e.g., "Drive if you dare"
-                    description = ad.get("description")  # Full description
-                    copyright_text = ad.get("copyright")  # e.g., "© Roberto Moiola..."
+                    title = ad.get("title")
+                    description = ad.get("description")
+                    copyright_text = ad.get("copyright")
 
                     # Use location as title, API title as subject
                     metadata_title = location_title or title
                     metadata_subject = title if location_title else None
                     metadata_comment = description
 
-                    # Extract author from copyright (first name before / or -)
                     author = None
                     if copyright_text:
-                        match = re.match(r"©\s*(?:photo by\s+)?([^/\-–—]+)", copyright_text, re.IGNORECASE)
+                        match = re.match(
+                            r"©\s*(?:photo by\s+)?([^/\-–—]+)",
+                            copyright_text,
+                            re.IGNORECASE,
+                        )
                         if match:
-                            author = _normalize_author_separators(match.group(1).strip())
+                            author = _normalize_author_separators(
+                                match.group(1).strip()
+                            )
 
-                    # Download landscape image
                     if orientation in ("landscape", "both"):
                         landscape_url = ad.get("landscapeImage", {}).get("asset")
                         if landscape_url:
-                            # Extract filename from URL
                             filename = os.path.basename(landscape_url.split("?")[0])
                             output_path = os.path.join(output_dir, filename)
 
@@ -827,7 +824,6 @@ def download_wallpapers(
                             ):
                                 download_count += 1
 
-                    # Download portrait image
                     if orientation in ("portrait", "both"):
                         portrait_url = ad.get("portraitImage", {}).get("asset")
                         if portrait_url:
@@ -853,7 +849,6 @@ def download_wallpapers(
             logger.warning("V4 API request failed: %s", e)
             v4_success = False
 
-    # Use v3 if explicitly requested, v4 failed, or "both" requested
     if api_version in ("v3", "both") or (api_version == "auto" and not v4_success):
         parameters = {
             "fmt": "json",
@@ -881,23 +876,25 @@ def download_wallpapers(
                     item = json.loads(raw_item.get("item", r"{}"))
                     ad = item.get("ad", {})
 
-                    # Extract metadata from v3 response
-                    title = ad.get("title_text", {}).get("tx")  # e.g., "Colca Canyon, Peru"
+                    title = ad.get("title_text", {}).get("tx")
                     copyright_text = ad.get("copyright_text", {}).get("tx")
 
-                    # Get description from hotspot text
                     hs1_text = ad.get("hs1_title_text", {}).get("tx", "")
                     hs2_text = ad.get("hs2_title_text", {}).get("tx", "")
                     description = hs1_text or hs2_text
 
-                    # Extract author from copyright (first name before / or -)
                     author = None
                     if copyright_text:
-                        match = re.match(r"©\s*(?:photo by\s+)?([^/\-–—]+)", copyright_text, re.IGNORECASE)
+                        match = re.match(
+                            r"©\s*(?:photo by\s+)?([^/\-–—]+)",
+                            copyright_text,
+                            re.IGNORECASE,
+                        )
                         if match:
-                            author = _normalize_author_separators(match.group(1).strip())
+                            author = _normalize_author_separators(
+                                match.group(1).strip()
+                            )
 
-                    # Download landscape image
                     if orientation in ("landscape", "both"):
                         landscape_data = ad.get("image_fullscreen_001_landscape", {})
                         landscape_url = landscape_data.get("u")
@@ -922,7 +919,6 @@ def download_wallpapers(
                                 ):
                                     v3_count += 1
 
-                    # Download portrait image
                     if orientation in ("portrait", "both"):
                         portrait_data = ad.get("image_fullscreen_001_portrait", {})
                         portrait_url = portrait_data.get("u")
