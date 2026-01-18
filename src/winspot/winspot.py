@@ -623,7 +623,7 @@ def download_bing_daily_images(
                 if match:
                     image_subject = match.group(1).strip()  # Description of scene
                     image_copyright = match.group(2).strip()  # © with attribution
-                    image_author = match.group(3).strip()  # Photographer name
+                    image_author = _normalize_author_separators(match.group(3).strip())  # Photographer name
                 else:
                     image_subject = raw_copyright
                     image_copyright = ""
@@ -662,6 +662,23 @@ def _extract_title_from_hover_text(hover_text: str) -> str | None:
     if lines:
         return lines[0].strip()
     return None
+
+
+def _normalize_author_separators(author: str) -> str:
+    """Normalizes author separators to semicolons for Windows metadata.
+    
+    Converts various separator patterns to semicolons:
+    - "A, B, and C" -> "A; B; C"
+    - "A and B" -> "A; B"
+    - "A, B" -> "A; B"
+    """
+    if not author:
+        return author
+    # Replace ", and " first to avoid double replacement
+    result = re.sub(r",?\s+and\s+", "; ", author, flags=re.IGNORECASE)
+    # Replace remaining commas
+    result = re.sub(r",\s*", "; ", result)
+    return result
 
 
 def _download_and_save_image(
@@ -791,6 +808,13 @@ def download_wallpapers(
                     metadata_subject = title if location_title else None
                     metadata_comment = description
 
+                    # Extract author from copyright (first name before / or -)
+                    author = None
+                    if copyright_text:
+                        match = re.match(r"©\s*(?:photo by\s+)?([^/\-–—]+)", copyright_text, re.IGNORECASE)
+                        if match:
+                            author = _normalize_author_separators(match.group(1).strip())
+
                     # Download landscape image
                     if orientation in ("landscape", "both"):
                         landscape_url = ad.get("landscapeImage", {}).get("asset")
@@ -808,6 +832,7 @@ def download_wallpapers(
                                 subject=metadata_subject,
                                 copyright_text=copyright_text,
                                 comment=metadata_comment,
+                                author=author,
                             ):
                                 download_count += 1
 
@@ -827,6 +852,7 @@ def download_wallpapers(
                                 subject=metadata_subject,
                                 copyright_text=copyright_text,
                                 comment=metadata_comment,
+                                author=author,
                             ):
                                 download_count += 1
 
@@ -836,8 +862,8 @@ def download_wallpapers(
             logger.warning("V4 API request failed: %s", e)
             v4_success = False
 
-    # Use v3 if explicitly requested or v4 failed
-    if api_version == "v3" or (api_version == "auto" and not v4_success):
+    # Use v3 if explicitly requested, v4 failed, or "both" requested
+    if api_version in ("v3", "both") or (api_version == "auto" and not v4_success):
         parameters = {
             "fmt": "json",
             "pid": "338387",
@@ -873,6 +899,13 @@ def download_wallpapers(
                     hs2_text = ad.get("hs2_title_text", {}).get("tx", "")
                     description = hs1_text or hs2_text
 
+                    # Extract author from copyright (first name before / or -)
+                    author = None
+                    if copyright_text:
+                        match = re.match(r"©\s*(?:photo by\s+)?([^/\-–—]+)", copyright_text, re.IGNORECASE)
+                        if match:
+                            author = _normalize_author_separators(match.group(1).strip())
+
                     # Download landscape image
                     if orientation in ("landscape", "both"):
                         landscape_data = ad.get("image_fullscreen_001_landscape", {})
@@ -894,6 +927,7 @@ def download_wallpapers(
                                     subject=None,
                                     copyright_text=copyright_text,
                                     comment=description,
+                                    author=author,
                                 ):
                                     v3_count += 1
 
@@ -917,6 +951,7 @@ def download_wallpapers(
                                     subject=None,
                                     copyright_text=copyright_text,
                                     comment=description,
+                                    author=author,
                                 ):
                                     v3_count += 1
 
@@ -1144,8 +1179,8 @@ def main(argv: list[str] | None = None) -> int:
         "--api-version",
         type=str,
         default="auto",
-        choices=["v3", "v4", "auto"],
-        help="API version to use",
+        choices=["v3", "v4", "both", "auto"],
+        help="API version to use (both queries V4 and V3)",
     )
     download_parser.add_argument(
         "-C", "--country-code", type=str, help="Country code (e.g., US, CN)"
