@@ -724,7 +724,7 @@ def _download_and_save_image(
 
 
 def download_images(
-    api_version: Literal["v3", "v4", "auto"] = "auto",
+    api_version: Literal["v3", "v4", "auto", "both"] = "auto",
     country_code: str | None = None,
     locale: str | None = None,
     orientation: Literal["landscape", "portrait", "both"] = "both",
@@ -758,7 +758,7 @@ def download_images(
     download_count = 0
     v4_success = False
 
-    if api_version == "v4" or api_version == "auto":
+    if api_version in ("v4", "auto", "both"):
         parameters = {
             "fmt": "json",
             "placement": "88000820",
