@@ -30,19 +30,19 @@ winspot uses subcommands to organize different operations:
 #### Extract Windows Spotlight
 
 ```bash
-# Save all wallpapers (cached, desktop, lockscreen)
+# Save all images (cached, desktop, lockscreen)
 winspot extract
 
-# Save only cached wallpapers
+# Save only cached images
 winspot extract --cached
 
-# Save only desktop wallpaper
+# Save only desktop image
 winspot extract --desktop
 
-# Save only lock screen wallpaper
+# Save only lock screen image
 winspot extract --lockscreen
 
-# Save only landscape wallpapers with duplicate prevention
+# Save only landscape images with duplicate prevention
 winspot extract --orientation landscape --prevent-duplicates
 ```
 
@@ -83,19 +83,19 @@ winspot bing --help
 import winspot
 
 # Save with default settings (all sources)
-winspot.extract_wallpapers()
+winspot.extract_images()
 
-# Save only cached wallpapers
-winspot.extract_wallpapers(desktop=False, lockscreen=False)
+# Save only cached images
+winspot.extract_images(desktop=False, lockscreen=False)
 
-# Save only landscape wallpapers with duplicate prevention
-winspot.extract_wallpapers(
+# Save only landscape images with duplicate prevention
+winspot.extract_images(
     orientation="landscape",
     prevent_duplicates=True
 )
 
 # Save with conflict resolution
-winspot.extract_wallpapers(
+winspot.extract_images(
     on_conflict="skip",  # or "overwrite", "rename"
 )
 

@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 authors = [
   {name = "Volodymyr Horshenin"}
 ]
-description = "A CLI utility to export and reset Windows Spotlight images."
+description = "A CLI utility to extract, download, and reset Windows Spotlight and Bing daily images."
 readme = "README.md"
 license = "MIT"
 license-files = [

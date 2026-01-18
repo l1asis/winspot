@@ -29,8 +29,8 @@ __about__ = rf"""
   Repository:   https://github.com/l1asis/winspot
 
   Description: 
-  A utility to export and reset Windows Spotlight images 
-  from hidden system caches.
+  A utility to extract, download, and reset Windows Spotlight
+  and Bing daily images.
 
   Made with respect for the Windows community.
 """

@@ -492,7 +492,7 @@ def _smart_copy(
 
 
 def reset_windows_spotlight() -> None:
-    """Resets Windows Spotlight to try to fetch new wallpapers."""
+    """Resets Windows Spotlight to try to fetch new images."""
     logger.info("Starting Windows Spotlight reset...")
 
     # Terminate SystemSettings to unlock files
@@ -719,17 +719,17 @@ def _download_and_save_image(
         return False
 
 
-def download_wallpapers(
+def download_images(
     api_version: Literal["v3", "v4", "auto"] = "auto",
     country_code: str | None = None,
     locale: str | None = None,
     orientation: Literal["landscape", "portrait", "both"] = "both",
     on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
     prevent_duplicates: bool = False,
-    output_dir: str = ".\\WindowsSpotlightWallpapers",
+    output_dir: str = ".\\WindowsSpotlightImages",
     clear_output: bool = False,
 ) -> None:
-    """Downloads wallpapers from Windows Spotlight API."""
+    """Downloads images from Windows Spotlight API."""
     logger.info("Starting Spotlight API download to: %s", output_dir)
     logger.debug(
         "Options: api_version=%s, country_code=%s, locale=%s, orientation=%s",
@@ -740,7 +740,7 @@ def download_wallpapers(
     )
 
     if not requests_imported:
-        logger.error("requests library not installed - cannot download wallpapers")
+        logger.error("requests library not installed - cannot download images")
         return
 
     if clear_output and os.path.exists(output_dir):
@@ -952,18 +952,18 @@ def download_wallpapers(
     return
 
 
-def extract_wallpapers(
+def extract_images(
     cached: bool = True,
     desktop: bool = True,
     lockscreen: bool = True,
     orientation: Literal["landscape", "portrait", "both"] = "both",
     on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
     prevent_duplicates: bool = False,
-    output_dir: str = ".\\WindowsSpotlightWallpapers",
+    output_dir: str = ".\\WindowsSpotlightImages",
     clear_output: bool = False,
 ) -> None:
-    """Extracts Windows Spotlight wallpapers based on the specified options."""
-    logger.info("Starting wallpaper extraction to: %s", output_dir)
+    """Extracts Windows Spotlight images based on the specified options."""
+    logger.info("Starting image extraction to: %s", output_dir)
     logger.debug(
         "Options: cached=%s, desktop=%s, lockscreen=%s, orientation=%s",
         cached,
@@ -1000,7 +1000,7 @@ def extract_wallpapers(
     extract_count = 0
 
     if desktop and os.path.exists(desktop_path) and os.path.isfile(desktop_path):
-        logger.debug("Extracting desktop wallpaper")
+        logger.debug("Extracting desktop image")
         if _smart_copy(
             desktop_path,
             os.path.join(output_dir, "Desktop.jpg"),
@@ -1010,7 +1010,7 @@ def extract_wallpapers(
             extract_count += 1
 
     if cached:
-        logger.debug("Scanning cached wallpaper sources")
+        logger.debug("Scanning cached image sources")
         if os.path.exists(iris_service_path) and os.path.isdir(iris_service_path):
             for dirpath, _, filenames in os.walk(iris_service_path):
                 for filename in filenames:
@@ -1074,7 +1074,7 @@ def extract_wallpapers(
                             extract_count += 1
 
     if lockscreen and lockscreen_path:
-        logger.debug("Extracting lock screen wallpapers")
+        logger.debug("Extracting lock screen images")
         if os.path.exists(lockscreen_path) and os.path.isdir(lockscreen_path):
             for entry_name in os.listdir(lockscreen_path):
                 if entry_name.lower().startswith("lockscreen"):
@@ -1094,35 +1094,35 @@ def extract_wallpapers(
                             ):
                                 extract_count += 1
 
-    logger.info("Extraction completed: %d wallpapers", extract_count)
+    logger.info("Extraction completed: %d images", extract_count)
 
 
 def main(argv: list[str] | None = None) -> int:
     """Entry point for the command-line interface."""
     parser = argparse.ArgumentParser(
-        description="Extract Windows Spotlight wallpapers."
+        description="Extract, download, and manage Windows Spotlight images."
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Command to execute")
 
     # Extract command
     extract_parser = subparsers.add_parser(
-        "extract", help="Extract Windows Spotlight wallpapers"
+        "extract", help="Extract Windows Spotlight images"
     )
     extract_parser.add_argument(
         "-c",
         "--cached",
         action="store_true",
-        help="Extract cached wallpapers from IrisService and Assets folders",
+        help="Extract cached images from IrisService and Assets folders",
     )
     extract_parser.add_argument(
-        "-d", "--desktop", action="store_true", help="Extract current desktop wallpaper"
+        "-d", "--desktop", action="store_true", help="Extract current desktop image"
     )
     extract_parser.add_argument(
         "-l",
         "--lockscreen",
         action="store_true",
-        help="Extract current lock screen wallpaper (if accessible)",
+        help="Extract current lock screen image (if accessible)",
     )
     extract_parser.add_argument(
         "-r",
@@ -1130,7 +1130,7 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         default="both",
         choices=["landscape", "portrait", "both"],
-        help="Filter wallpapers by orientation",
+        help="Filter images by orientation",
     )
 
     # Bing daily images command
@@ -1157,9 +1157,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Market locale (e.g., en-US, zh-CN)",
     )
 
-    # Download wallpapers command
+    # Download images command
     download_parser = subparsers.add_parser(
-        "download", help="Download wallpapers from Windows Spotlight API"
+        "download", help="Download images from Windows Spotlight API"
     )
     download_parser.add_argument(
         "-a",
@@ -1181,7 +1181,7 @@ def main(argv: list[str] | None = None) -> int:
         type=str,
         default="both",
         choices=["landscape", "portrait", "both"],
-        help="Filter wallpapers by orientation",
+        help="Filter images by orientation",
     )
 
     # Shared arguments for all download/extract commands
@@ -1216,7 +1216,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--reset",
         action="store_true",
-        help="Reset Windows Spotlight settings to fetch new wallpapers",
+        help="Reset Windows Spotlight settings to fetch new images",
     )
     parser.add_argument(
         "--force",
@@ -1282,14 +1282,14 @@ def main(argv: list[str] | None = None) -> int:
             clear_output=args.clear,
         )
     elif args.command == "download":
-        download_wallpapers(
+        download_images(
             api_version=args.api_version,
             country_code=args.country_code,
             locale=args.locale,
             orientation=args.orientation,
             on_conflict=args.on_conflict,
             prevent_duplicates=args.prevent_duplicates,
-            output_dir=args.out or ".\\WindowsSpotlightWallpapers",
+            output_dir=args.out or ".\\WindowsSpotlightImages",
             clear_output=args.clear,
         )
     elif args.command == "extract":
@@ -1298,14 +1298,14 @@ def main(argv: list[str] | None = None) -> int:
             args.desktop = True
             args.lockscreen = True
 
-        extract_wallpapers(
+        extract_images(
             cached=args.cached,
             desktop=args.desktop,
             lockscreen=args.lockscreen,
             orientation=args.orientation,
             on_conflict=args.on_conflict,
             prevent_duplicates=args.prevent_duplicates,
-            output_dir=args.out or ".\\WindowsSpotlightWallpapers",
+            output_dir=args.out or ".\\WindowsSpotlightImages",
             clear_output=args.clear,
         )
     else:
