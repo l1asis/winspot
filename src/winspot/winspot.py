@@ -578,6 +578,8 @@ def download_bing_daily_images(
         logger.error("requests library not installed - cannot download images")
         return
 
+    download_count = 0
+
     # Pattern: "Description (© Author/Agency)" or "Description (© Author - Agency)"
     # Captures: 1=description, 2=full copyright with ©, 3=photographer name only
     pattern = r"^(.*?) \((©\s*(?:photo by\s+)?([^/\-–—]+?)(?:\s*[/\-–—].*)?)\)$"
@@ -635,7 +637,7 @@ def download_bing_daily_images(
                 )
                 output_path = os.path.join(output_dir, file_name)
 
-                _download_and_save_image(
+                if _download_and_save_image(
                     image_url,
                     output_path,
                     on_conflict,
@@ -645,9 +647,10 @@ def download_bing_daily_images(
                     copyright_text=image_copyright,
                     comment=raw_copyright,
                     author=image_author,
-                )
+                ):
+                    download_count += 1
 
-    logger.info("Bing daily image download completed")
+    logger.info("Bing download completed: %d images", download_count)
 
 
 def _extract_title_from_hover_text(hover_text: str) -> str | None:
@@ -707,7 +710,7 @@ def _download_and_save_image(
             os.remove(temp_path)
 
         if success:
-            logger.info("Downloaded: %s", os.path.basename(output_path))
+            logger.debug("Downloaded: %s", os.path.basename(output_path))
 
         return success
 
@@ -972,14 +975,17 @@ def extract_wallpapers(
         logger.info("Clearing output directory")
         _clear_directory(output_dir)
 
+    extract_count = 0
+
     if desktop and os.path.exists(desktop_path) and os.path.isfile(desktop_path):
         logger.debug("Extracting desktop wallpaper")
-        _smart_copy(
+        if _smart_copy(
             desktop_path,
             os.path.join(output_dir, "Desktop.jpg"),
             on_conflict,
             prevent_duplicates,
-        )
+        ):
+            extract_count += 1
 
     if cached:
         logger.debug("Scanning cached wallpaper sources")
@@ -999,19 +1005,21 @@ def extract_wallpapers(
                                 if (orientation == "landscape" and is_landscape) or (
                                     orientation == "portrait" and not is_landscape
                                 ):
-                                    _smart_copy(
+                                    if _smart_copy(
                                         source_file,
                                         output_file,
                                         on_conflict,
                                         prevent_duplicates,
-                                    )
+                                    ):
+                                        extract_count += 1
                             else:
-                                _smart_copy(
+                                if _smart_copy(
                                     source_file,
                                     output_file,
                                     on_conflict,
                                     prevent_duplicates,
-                                )
+                                ):
+                                    extract_count += 1
 
         if os.path.exists(assets_path) and os.path.isdir(assets_path):
             for entry in os.scandir(assets_path):
@@ -1027,19 +1035,21 @@ def extract_wallpapers(
                         if (orientation == "landscape" and is_landscape) or (
                             orientation == "portrait" and not is_landscape
                         ):
-                            _smart_copy(
+                            if _smart_copy(
                                 source_file,
                                 output_file,
                                 on_conflict,
                                 prevent_duplicates,
-                            )
+                            ):
+                                extract_count += 1
                     else:
-                        _smart_copy(
+                        if _smart_copy(
                             source_file,
                             output_file,
                             on_conflict,
                             prevent_duplicates,
-                        )
+                        ):
+                            extract_count += 1
 
     if lockscreen and lockscreen_path:
         logger.debug("Extracting lock screen wallpapers")
@@ -1054,14 +1064,15 @@ def extract_wallpapers(
                         )
                         if os.path.isfile(source_file):
                             output_file = os.path.join(output_dir, filename)
-                            _smart_copy(
+                            if _smart_copy(
                                 source_file,
                                 output_file,
                                 on_conflict,
                                 prevent_duplicates,
-                            )
+                            ):
+                                extract_count += 1
 
-    logger.info("Wallpaper extraction completed")
+    logger.info("Extraction completed: %d wallpapers", extract_count)
 
 
 def main(argv: list[str] | None = None) -> int:
