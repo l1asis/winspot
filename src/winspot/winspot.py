@@ -653,17 +653,6 @@ def download_bing_daily_images(
     logger.info("Bing download completed: %d images", download_count)
 
 
-def _extract_title_from_hover_text(hover_text: str) -> str | None:
-    """Extracts the location/title from iconHoverText (first line before ©)."""
-    if not hover_text:
-        return None
-    # iconHoverText format: "Location\r\n© Copyright\r\nRight-click..."
-    lines = hover_text.split("\r\n")
-    if lines:
-        return lines[0].strip()
-    return None
-
-
 def _normalize_author_separators(author: str) -> str:
     """Normalizes author separators to semicolons for Windows metadata.
     
@@ -797,7 +786,9 @@ def download_wallpapers(
                     # Extract metadata from v4 response
                     # iconHoverText: "Location\r\n© Copyright\r\nRight-click to learn more"
                     hover_text = ad.get("iconHoverText", "")
-                    location_title = _extract_title_from_hover_text(hover_text)
+                    location_title = None
+                    if hover_text_lines := hover_text.split("\r\n"):
+                        location_title = hover_text_lines[0].strip()
 
                     title = ad.get("title")  # e.g., "Drive if you dare"
                     description = ad.get("description")  # Full description
