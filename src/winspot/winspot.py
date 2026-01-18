@@ -563,6 +563,7 @@ def download_bing_daily_images(
     prevent_duplicates: bool = False,
     output_dir: str = ".\\BingDailyImages",
     clear_output: bool = False,
+    add_metadata: bool = True,
 ) -> None:
     """Downloads Bing daily images."""
     logger.info("Starting Bing daily image download to: %s", output_dir)
@@ -647,6 +648,7 @@ def download_bing_daily_images(
                     copyright_text=image_copyright,
                     comment=raw_copyright,
                     author=image_author,
+                    add_metadata=add_metadata,
                 ):
                     download_count += 1
 
@@ -678,6 +680,7 @@ def _download_and_save_image(
     copyright_text: str | None = None,
     comment: str | None = None,
     author: str | None = None,
+    add_metadata: bool = True,
 ) -> bool:
     """Downloads an image from URL and saves it with metadata."""
     try:
@@ -690,14 +693,15 @@ def _download_and_save_image(
         with open(temp_path, "wb") as f:
             f.write(response.content)
 
-        _add_image_metadata(
-            temp_path,
-            title=title,
-            subject=subject,
-            copyright=copyright_text,
-            comment=comment,
-            author=author,
-        )
+        if add_metadata:
+            _add_image_metadata(
+                temp_path,
+                title=title,
+                subject=subject,
+                copyright=copyright_text,
+                comment=comment,
+                author=author,
+            )
 
         success = _smart_copy(
             temp_path,
@@ -728,6 +732,7 @@ def download_images(
     prevent_duplicates: bool = False,
     output_dir: str = ".\\WindowsSpotlightImages",
     clear_output: bool = False,
+    add_metadata: bool = True,
 ) -> None:
     """Downloads images from Windows Spotlight API."""
     logger.info("Starting Spotlight API download to: %s", output_dir)
@@ -821,6 +826,7 @@ def download_images(
                                 copyright_text=copyright_text,
                                 comment=metadata_comment,
                                 author=author,
+                                add_metadata=add_metadata,
                             ):
                                 download_count += 1
 
@@ -840,6 +846,7 @@ def download_images(
                                 copyright_text=copyright_text,
                                 comment=metadata_comment,
                                 author=author,
+                                add_metadata=add_metadata,
                             ):
                                 download_count += 1
 
@@ -916,6 +923,7 @@ def download_images(
                                     copyright_text=copyright_text,
                                     comment=description,
                                     author=author,
+                                    add_metadata=add_metadata,
                                 ):
                                     v3_count += 1
 
@@ -939,6 +947,7 @@ def download_images(
                                     copyright_text=copyright_text,
                                     comment=description,
                                     author=author,
+                                    add_metadata=add_metadata,
                                 ):
                                     v3_count += 1
 
@@ -1184,7 +1193,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Filter images by orientation",
     )
 
-    # Shared arguments for all download/extract commands
+    # Shared arguments for all commands
     for subparser in [extract_parser, bing_parser, download_parser]:
         subparser.add_argument(
             "-s",
@@ -1210,6 +1219,14 @@ def main(argv: list[str] | None = None) -> int:
             "--clear",
             action="store_true",
             help="Clear the output directory before operation",
+        )
+
+    # Shared arguments for download commands only
+    for subparser in [bing_parser, download_parser]:
+        subparser.add_argument(
+            "--no-metadata",
+            action="store_true",
+            help="Skip adding metadata to downloaded images",
         )
 
     # Global arguments
@@ -1280,6 +1297,7 @@ def main(argv: list[str] | None = None) -> int:
             prevent_duplicates=args.prevent_duplicates,
             output_dir=args.out or ".\\BingDailyImages",
             clear_output=args.clear,
+            add_metadata=not args.no_metadata,
         )
     elif args.command == "download":
         download_images(
@@ -1291,6 +1309,7 @@ def main(argv: list[str] | None = None) -> int:
             prevent_duplicates=args.prevent_duplicates,
             output_dir=args.out or ".\\WindowsSpotlightImages",
             clear_output=args.clear,
+            add_metadata=not args.no_metadata,
         )
     elif args.command == "extract":
         if not args.cached and not args.desktop and not args.lockscreen:
