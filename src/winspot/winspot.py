@@ -415,25 +415,25 @@ def _clear_directory(path: str) -> None:
             logger.error("Failed to delete %s", entry.path, exc_info=True)
 
 
-def _get_categorized_path(
+def _get_organized_path(
     base_dir: str,
     filename: str,
-    categorize_by: Literal["none", "orientation", "resolution"],
+    organize_by: Literal["none", "orientation", "resolution"],
     width: int | None = None,
     height: int | None = None,
     image_path: str | None = None,
 ) -> str:
-    """Determines the output path with appropriate subfolder based on categorization.
+    """Determines the output path with appropriate subfolder based on organization.
 
     :param base_dir: Base output directory
     :param filename: Name of the file
-    :param categorize_by: Categorization method (none, orientation, or resolution)
+    :param organize_by: Organization method (none, orientation, or resolution)
     :param width: Image width (if known)
     :param height: Image height (if known)
     :param image_path: Path to existing image file (to detect dimensions if width/height not provided)
     :return: Full output path with appropriate subfolder
     """
-    if categorize_by == "none":
+    if organize_by == "none":
         return os.path.join(base_dir, filename)
 
     if (width is None or height is None) and image_path:
@@ -447,9 +447,9 @@ def _get_categorized_path(
         )
         return os.path.join(base_dir, filename)
 
-    if categorize_by == "orientation":
+    if organize_by == "orientation":
         subfolder = "Portrait" if height > width else "Landscape"
-    elif categorize_by == "resolution":
+    elif organize_by == "resolution":
         subfolder = f"{width}x{height}"
     else:
         subfolder = ""
@@ -608,7 +608,7 @@ def download_bing_daily_images(
     locale: str = "en-US",
     on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
     prevent_duplicates: bool = False,
-    categorize_by: Literal["none", "orientation", "resolution"] = "none",
+    organize_by: Literal["none", "orientation", "resolution"] = "none",
     output_dir: str = ".\\BingDailyImages",
     clear_output: bool = False,
     add_metadata: bool = True,
@@ -686,8 +686,8 @@ def download_bing_daily_images(
                     image["urlbase"].split(".")[-1].split("_")[0].replace("OHR.", "")
                 )
                 file_name = f"Bing_{image['startdate']}_{image_topic}_{width_str}x{height_str}.jpg"
-                output_path = _get_categorized_path(
-                    output_dir, file_name, categorize_by, img_width, img_height
+                output_path = _get_organized_path(
+                    output_dir, file_name, organize_by, img_width, img_height
                 )
 
                 if _download_and_save_image(
@@ -782,7 +782,7 @@ def download_images(
     orientation: Literal["landscape", "portrait", "both"] = "both",
     on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
     prevent_duplicates: bool = False,
-    categorize_by: Literal["none", "orientation", "resolution"] = "none",
+    organize_by: Literal["none", "orientation", "resolution"] = "none",
     output_dir: str = ".\\WindowsSpotlightImages",
     clear_output: bool = False,
     add_metadata: bool = True,
@@ -867,8 +867,8 @@ def download_images(
                         landscape_url = ad.get("landscapeImage", {}).get("asset")
                         if landscape_url:
                             filename = os.path.basename(landscape_url.split("?")[0])
-                            output_path = _get_categorized_path(
-                                output_dir, filename, categorize_by, 3840, 2160
+                            output_path = _get_organized_path(
+                                output_dir, filename, organize_by, 3840, 2160
                             )
 
                             if _download_and_save_image(
@@ -889,8 +889,8 @@ def download_images(
                         portrait_url = ad.get("portraitImage", {}).get("asset")
                         if portrait_url:
                             filename = os.path.basename(portrait_url.split("?")[0])
-                            output_path = _get_categorized_path(
-                                output_dir, filename, categorize_by, 1080, 1920
+                            output_path = _get_organized_path(
+                                output_dir, filename, organize_by, 1080, 1920
                             )
 
                             if _download_and_save_image(
@@ -968,8 +968,8 @@ def download_images(
                             file_size = int(landscape_data.get("fileSize", "0"))
                             if file_size > 1000:
                                 filename = os.path.basename(landscape_url.split("?")[0])
-                                output_path = _get_categorized_path(
-                                    output_dir, filename, categorize_by, 1920, 1080
+                                output_path = _get_organized_path(
+                                    output_dir, filename, organize_by, 1920, 1080
                                 )
 
                                 if _download_and_save_image(
@@ -994,8 +994,8 @@ def download_images(
                             file_size = int(portrait_data.get("fileSize", "0"))
                             if file_size > 1000:
                                 filename = os.path.basename(portrait_url.split("?")[0])
-                                output_path = _get_categorized_path(
-                                    output_dir, filename, categorize_by, 1080, 1920
+                                output_path = _get_organized_path(
+                                    output_dir, filename, organize_by, 1080, 1920
                                 )
 
                                 if _download_and_save_image(
@@ -1029,7 +1029,7 @@ def extract_images(
     orientation: Literal["landscape", "portrait", "both"] = "both",
     on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
     prevent_duplicates: bool = False,
-    categorize_by: Literal["none", "orientation", "resolution"] = "none",
+    organize_by: Literal["none", "orientation", "resolution"] = "none",
     output_dir: str = ".\\WindowsSpotlightImages",
     clear_output: bool = False,
 ) -> None:
@@ -1072,8 +1072,8 @@ def extract_images(
 
     if desktop and os.path.exists(desktop_path) and os.path.isfile(desktop_path):
         logger.debug("Extracting desktop image")
-        output_path = _get_categorized_path(
-            output_dir, "Desktop.jpg", categorize_by, image_path=desktop_path
+        output_path = _get_organized_path(
+            output_dir, "Desktop.jpg", organize_by, image_path=desktop_path
         )
         if _smart_copy(
             desktop_path,
@@ -1100,8 +1100,8 @@ def extract_images(
                                 if (orientation == "landscape" and is_landscape) or (
                                     orientation == "portrait" and not is_landscape
                                 ):
-                                    output_file = _get_categorized_path(
-                                        output_dir, filename, categorize_by, w, h
+                                    output_file = _get_organized_path(
+                                        output_dir, filename, organize_by, w, h
                                     )
                                     if _smart_copy(
                                         source_file,
@@ -1111,10 +1111,10 @@ def extract_images(
                                     ):
                                         extract_count += 1
                             else:
-                                output_file = _get_categorized_path(
+                                output_file = _get_organized_path(
                                     output_dir,
                                     filename,
-                                    categorize_by,
+                                    organize_by,
                                     image_path=source_file,
                                 )
                                 if _smart_copy(
@@ -1139,8 +1139,8 @@ def extract_images(
                         if (orientation == "landscape" and is_landscape) or (
                             orientation == "portrait" and not is_landscape
                         ):
-                            output_file = _get_categorized_path(
-                                output_dir, filename, categorize_by, w, h
+                            output_file = _get_organized_path(
+                                output_dir, filename, organize_by, w, h
                             )
                             if _smart_copy(
                                 source_file,
@@ -1150,8 +1150,8 @@ def extract_images(
                             ):
                                 extract_count += 1
                     else:
-                        output_file = _get_categorized_path(
-                            output_dir, filename, categorize_by, image_path=source_file
+                        output_file = _get_organized_path(
+                            output_dir, filename, organize_by, image_path=source_file
                         )
                         if _smart_copy(
                             source_file,
@@ -1173,10 +1173,10 @@ def extract_images(
                             lockscreen_path, entry_name, filename
                         )
                         if os.path.isfile(source_file):
-                            output_file = _get_categorized_path(
+                            output_file = _get_organized_path(
                                 output_dir,
                                 filename,
-                                categorize_by,
+                                organize_by,
                                 image_path=source_file,
                             )
                             if _smart_copy(
@@ -1294,7 +1294,7 @@ def main(argv: list[str] | None = None) -> int:
             help="Prevent saving duplicate images based on content",
         )
         subparser.add_argument(
-            "--categorize-by",
+            "--organize-by",
             type=str,
             default="none",
             choices=["none", "orientation", "resolution"],
@@ -1387,7 +1387,7 @@ def main(argv: list[str] | None = None) -> int:
             locale=args.locale,
             on_conflict=args.on_conflict,
             prevent_duplicates=args.prevent_duplicates,
-            categorize_by=args.categorize_by,
+            organize_by=args.organize_by,
             output_dir=args.out or ".\\BingDailyImages",
             clear_output=args.clear,
             add_metadata=not args.no_metadata,
@@ -1400,7 +1400,7 @@ def main(argv: list[str] | None = None) -> int:
             orientation=args.orientation,
             on_conflict=args.on_conflict,
             prevent_duplicates=args.prevent_duplicates,
-            categorize_by=args.categorize_by,
+            organize_by=args.organize_by,
             output_dir=args.out or ".\\WindowsSpotlightImages",
             clear_output=args.clear,
             add_metadata=not args.no_metadata,
@@ -1418,7 +1418,7 @@ def main(argv: list[str] | None = None) -> int:
             orientation=args.orientation,
             on_conflict=args.on_conflict,
             prevent_duplicates=args.prevent_duplicates,
-            categorize_by=args.categorize_by,
+            organize_by=args.organize_by,
             output_dir=args.out or ".\\WindowsSpotlightImages",
             clear_output=args.clear,
         )
