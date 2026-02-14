@@ -1298,7 +1298,8 @@ def main(argv: list[str] | None = None) -> int:
             type=str,
             default="none",
             choices=["none", "orientation", "resolution"],
-            help="Categorize output by orientation or resolution (creates subfolders)",
+            help="Organize images into subfolders: 'orientation' (Portrait/Landscape), "
+            "'resolution' (e.g., 1920x1080), or 'none' (flat structure, default)",
         )
         subparser.add_argument(
             "-o",
