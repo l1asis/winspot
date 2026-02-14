@@ -1158,8 +1158,8 @@ def main(argv: list[str] | None = None) -> int:
         "--resolution",
         type=str,
         default="3840x2160",
-        choices=["1920x1080", "3840x2160", "1080x1920"],
-        help="Image resolution",
+        help="Image resolution. Common resolutions: 1920x1080 (FHD), "
+        "3840x2160 (UHD, default), 1080x1920 (portrait)",
     )
     bing_parser.add_argument(
         "-L",
