@@ -1213,6 +1213,12 @@ def main(argv: list[str] | None = None) -> int:
             help="Prevent saving duplicate images based on content",
         )
         subparser.add_argument(
+            "--categorize-by",
+            type=str,
+            choices=["none", "orientation", "resolution"],
+            help="Categorize output by orientation or resolution (creates subfolders)",
+        )
+        subparser.add_argument(
             "-o",
             "--out",
             type=str,
