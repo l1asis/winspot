@@ -54,6 +54,20 @@ winspot extract --lockscreen
 winspot extract --orientation landscape --prevent-duplicates
 ```
 
+#### Download Spotlight Images
+
+```bash
+# Download images from Spotlight API
+winspot download
+
+# Download from both API versions (v3 and v4)
+winspot download --api-version both
+
+# Download and organize by orientation or resolution
+winspot download --orientation both --organize-by orientation
+winspot download --orientation both --organize-by resolution
+```
+
 #### Download Bing Daily Images
 
 ```bash
@@ -105,6 +119,13 @@ winspot.extract_images(
 # Save with conflict resolution
 winspot.extract_images(
     on_conflict="skip",  # or "overwrite", "rename"
+)
+
+# Download Spotlight API images
+winspot.download_images(
+    orientation="landscape",
+    organize_by="resolution",
+    prevent_duplicates=True
 )
 
 # Download Bing daily images
