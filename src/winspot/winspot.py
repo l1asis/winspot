@@ -561,6 +561,7 @@ def download_bing_daily_images(
     locale: str = "en-US",
     on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
     prevent_duplicates: bool = False,
+    categorize_by: Literal["none", "orientation", "resolution"] = "none",
     output_dir: str = ".\\BingDailyImages",
     clear_output: bool = False,
     add_metadata: bool = True,
@@ -733,6 +734,7 @@ def download_images(
     orientation: Literal["landscape", "portrait", "both"] = "both",
     on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
     prevent_duplicates: bool = False,
+    categorize_by: Literal["none", "orientation", "resolution"] = "none",
     output_dir: str = ".\\WindowsSpotlightImages",
     clear_output: bool = False,
     add_metadata: bool = True,
@@ -971,6 +973,7 @@ def extract_images(
     orientation: Literal["landscape", "portrait", "both"] = "both",
     on_conflict: Literal["rename", "overwrite", "skip"] = "rename",
     prevent_duplicates: bool = False,
+    categorize_by: Literal["none", "orientation", "resolution"] = "none",
     output_dir: str = ".\\WindowsSpotlightImages",
     clear_output: bool = False,
 ) -> None:
@@ -1215,6 +1218,7 @@ def main(argv: list[str] | None = None) -> int:
         subparser.add_argument(
             "--categorize-by",
             type=str,
+            default="none",
             choices=["none", "orientation", "resolution"],
             help="Categorize output by orientation or resolution (creates subfolders)",
         )
